@@ -1,65 +1,39 @@
-with selected_club as (
-  select coalesce(
-    (
-      select club_id
-      from public.users
-      where lower(email) = lower('scaftexas@gmail.com')
-        and club_id is not null
-      limit 1
-    ),
-    (
-      select id
-      from public.clubs
-      order by created_at
-      limit 1
-    )
-  ) as id
-),
-created_club as (
-  insert into public.clubs (name)
-  select 'SCAF League'
-  where not exists (select 1 from selected_club where id is not null)
-  returning id
-),
-target_club as (
-  select id from selected_club where id is not null
-  union all
-  select id from created_club
-  limit 1
-),
-target_auth_users as (
-  select
-    auth_user.id,
-    auth_user.email,
-    case lower(auth_user.email)
-      when 'scaftexas@gmail.com' then 'SCAF Admin'
-      when 'rbalakr@gmail.com' then 'R Balakr'
-      else auth_user.email
-    end as full_name
-  from auth.users auth_user
-  where lower(auth_user.email) in (
-    lower('scaftexas@gmail.com'),
-    lower('rbalakr@gmail.com')
-  )
-)
+-- Run this in the Supabase SQL Editor.
+-- It makes both emails admins for the same club.
+
+insert into public.clubs (id, name)
+values ('00000000-0000-0000-0000-000000000001', 'SCAF League')
+on conflict (id) do nothing;
+
 insert into public.users (id, club_id, role, full_name, email)
 select
-  target_auth_users.id,
-  target_club.id,
-  'admin'::public.user_role,
-  target_auth_users.full_name,
-  target_auth_users.email
-from target_auth_users
-cross join target_club
+  auth_user.id,
+  '00000000-0000-0000-0000-000000000001',
+  'admin',
+  case lower(auth_user.email)
+    when 'scaftexas@gmail.com' then 'SCAF Admin'
+    when 'rbalakr@gmail.com' then 'R Balakr'
+    else auth_user.email
+  end,
+  auth_user.email
+from auth.users auth_user
+where lower(auth_user.email) in ('scaftexas@gmail.com', 'rbalakr@gmail.com')
 on conflict (id) do update
 set
   club_id = excluded.club_id,
-  role = 'admin'::public.user_role,
+  role = 'admin',
   full_name = excluded.full_name,
-  email = excluded.email
-returning id, club_id, role, full_name, email;
+  email = excluded.email;
 
-select requested.email as missing_auth_user
+select
+  users.email,
+  users.role,
+  users.club_id
+from public.users users
+where lower(users.email) in ('scaftexas@gmail.com', 'rbalakr@gmail.com')
+order by users.email;
+
+select requested.email as auth_account_not_found
 from (
   values
     ('scaftexas@gmail.com'),
@@ -68,5 +42,5 @@ from (
 where not exists (
   select 1
   from auth.users auth_user
-  where lower(auth_user.email) = lower(requested.email)
+  where lower(auth_user.email) = requested.email
 );

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Flag, Send, Trophy } from "lucide-react";
 import { canClaimForfeit } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
@@ -53,6 +54,7 @@ type MatchRow = {
 };
 
 export function PlayerWorkspace() {
+  const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [profiles, setProfiles] = useState<PlayerProfileRow[]>([]);
@@ -84,6 +86,7 @@ export function PlayerWorkspace() {
     const { data: authData, error: authError } = authResult;
     if (authError || !authData.user) {
       setMessage("Sign in to see your scheduled matches.");
+      router.replace("/login");
       return;
     }
 
@@ -100,6 +103,8 @@ export function PlayerWorkspace() {
 
     if (userError || !userRow) {
       setMessage("Your login works, but no app user profile was found.");
+      await supabase.auth.signOut();
+      router.replace("/login");
       return;
     }
 

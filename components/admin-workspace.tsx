@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CalendarPlus, Check, ListChecks, Plus, Shuffle, Trophy, Upload, UsersRound } from "lucide-react";
 import { generateRoundRobinSchedule } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
@@ -64,6 +65,7 @@ type MatchRow = {
 const today = new Date().toISOString().slice(0, 10);
 
 export function AdminWorkspace() {
+  const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [tournaments, setTournaments] = useState<TournamentRow[]>([]);
@@ -171,6 +173,7 @@ export function AdminWorkspace() {
     if (authError || !authData.user) {
       setMessage("Sign in as an admin before creating tournaments or divisions.");
       setLoading(false);
+      router.replace("/login");
       return;
     }
 
@@ -189,12 +192,15 @@ export function AdminWorkspace() {
     if (profileError || !profile) {
       setMessage("Your login works, but no app user profile was found for this account.");
       setLoading(false);
+      await supabase.auth.signOut();
+      router.replace("/login");
       return;
     }
 
     if (profile.role !== "admin") {
       setMessage("This account is not an admin.");
       setLoading(false);
+      router.replace("/player");
       return;
     }
 
@@ -681,6 +687,34 @@ export function AdminWorkspace() {
       return;
     }
     setMessage("Standings are live. Leaderboards are calculated from completed matches, forfeits, and cancellations.");
+  }
+
+  if (loading || !adminUser) {
+    return (
+      <section className="hero">
+        <div>
+          <p className="eyebrow">Admin workspace</p>
+          <h1>Admin access required</h1>
+          <p className="hero-copy">
+            Tournament setup, player imports, scheduling, forfeits, and score corrections are available only to club admins.
+          </p>
+          <div className="toolbar">
+            <Link className="button" href="/login">
+              Open login
+            </Link>
+            <Link className="button secondary" href="/player">
+              My matches
+            </Link>
+          </div>
+        </div>
+        <div className="card notice">
+          <h2>{loading ? "Checking access" : "No admin access"}</h2>
+          <p className="subtle" data-testid="admin-status" role="status">
+            {message}
+          </p>
+        </div>
+      </section>
+    );
   }
 
   return (

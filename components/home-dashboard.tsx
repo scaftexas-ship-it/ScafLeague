@@ -73,7 +73,7 @@ export function HomeDashboard() {
 
     const { data: authData } = await supabase.auth.getUser();
     if (!authData.user) {
-      setMessage("Sign in to view live tournament data.");
+      router.replace("/login");
       return;
     }
 
@@ -85,7 +85,7 @@ export function HomeDashboard() {
 
     if (appUserError || !appUser) {
       await supabase.auth.signOut();
-      setMessage("This login is not registered for SCAF League. Ask an admin to add your user account first.");
+      router.replace("/login");
       return;
     }
 
