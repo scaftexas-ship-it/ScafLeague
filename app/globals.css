@@ -327,6 +327,14 @@ h3 {
   background: #fff;
 }
 
+.compact-field {
+  min-width: 160px;
+}
+
+.compact-field select {
+  min-height: 42px;
+}
+
 .file-drop {
   position: relative;
   display: grid;
