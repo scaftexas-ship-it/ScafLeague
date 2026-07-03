@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Flag, Send, Trophy } from "lucide-react";
 import { canClaimForfeit } from "@/lib/league-rules";
+import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { Match, MatchSet, MatchStatus } from "@/lib/types";
 
@@ -48,6 +49,7 @@ type MatchRow = {
   extension_week_start: string;
   extension_week_end: string;
   status: MatchStatus;
+  target_score?: number | null;
 };
 
 export function PlayerWorkspace() {
@@ -248,13 +250,37 @@ export function PlayerWorkspace() {
 
     const { data: matchRows, error: matchError } = await supabase
       .from("matches")
-      .select("id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status")
+      .select(matchSelectWithTargetScore)
       .in("division_id", divisionIds)
       .order("schedule_week_start", { ascending: true })
       .order("round", { ascending: true });
 
     if (matchError) {
-      setMessage(matchError.message);
+      if (!isMissingTargetScoreColumn(matchError)) {
+        setMessage(matchError.message);
+        return;
+      }
+
+      const { data: fallbackMatches, error: fallbackMatchError } = await supabase
+        .from("matches")
+        .select(matchSelectBasic)
+        .in("division_id", divisionIds)
+        .order("schedule_week_start", { ascending: true })
+        .order("round", { ascending: true });
+
+      if (fallbackMatchError) {
+        setMessage(fallbackMatchError.message);
+        return;
+      }
+
+      const allMatches = ((fallbackMatches || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 }));
+      const visibleMatches =
+        entryIds.length > 0 ? allMatches.filter((match) => entryIds.includes(match.entry_a_id) || entryIds.includes(match.entry_b_id)) : allMatches;
+
+      setDivisions((divisionRows || []) as DivisionRow[]);
+      setEntries((entryRows || []) as DivisionEntryRow[]);
+      setMatches(visibleMatches);
+      setMessage(visibleMatches.length > 0 ? successMessage : "No scheduled matches found yet.");
       return;
     }
 
@@ -298,7 +324,7 @@ export function PlayerWorkspace() {
         winner_entry_id: winnerEntryId
       })
       .eq("id", match.id)
-      .select("id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status")
+      .select(matchSelectBasic)
       .single();
 
     if (error) {
@@ -306,7 +332,9 @@ export function PlayerWorkspace() {
       return;
     }
 
-    setMatches((current) => current.map((item) => (item.id === match.id ? (data as MatchRow) : item)));
+    setMatches((current) =>
+      current.map((item) => (item.id === match.id ? ({ ...(data as MatchRow), target_score: match.target_score || 11 } as MatchRow) : item))
+    );
     setMessage("Score submitted.");
   }
 
@@ -334,7 +362,7 @@ export function PlayerWorkspace() {
         forfeit_by_entry_id: claimedByEntryId
       })
       .eq("id", match.id)
-      .select("id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status")
+      .select(matchSelectBasic)
       .single();
 
     if (error) {
@@ -342,7 +370,9 @@ export function PlayerWorkspace() {
       return;
     }
 
-    setMatches((current) => current.map((item) => (item.id === match.id ? (data as MatchRow) : item)));
+    setMatches((current) =>
+      current.map((item) => (item.id === match.id ? ({ ...(data as MatchRow), target_score: match.target_score || 11 } as MatchRow) : item))
+    );
     setMessage("Forfeit recorded.");
   }
 
@@ -463,10 +493,11 @@ function MatchCard({
   const [showScoreForm, setShowScoreForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [claimingForfeit, setClaimingForfeit] = useState(false);
+  const targetScore = match.target_score || 11;
   const [scoreForm, setScoreForm] = useState({
-    set1A: "11",
+    set1A: String(targetScore),
     set1B: "0",
-    set2A: "11",
+    set2A: String(targetScore),
     set2B: "0",
     set3A: "",
     set3B: ""
@@ -501,6 +532,7 @@ function MatchCard({
       <div className="match-meta">
         <span className="pill blue">{division?.name || "Division"}</span>
         <span className="pill">Round {match.round}</span>
+        <span className="pill">To {targetScore}</span>
       </div>
       <div className="versus">
         <span>{entryA?.label || "Entry A"}</span>
@@ -692,6 +724,7 @@ function toDomainMatch(match: MatchRow): Match {
     round: match.round,
     entryAId: match.entry_a_id,
     entryBId: match.entry_b_id,
+    targetScore: match.target_score || 11,
     scheduleWeekStart: match.schedule_week_start,
     scheduleWeekEnd: match.schedule_week_end,
     extensionWeekStart: match.extension_week_start,

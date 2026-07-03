@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, ClipboardList, Medal, UsersRound } from "lucide-react";
+import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { MatchStatus, Sport } from "@/lib/types";
 
@@ -37,6 +38,7 @@ type MatchRow = {
   schedule_week_end: string;
   extension_week_end: string;
   status: MatchStatus;
+  target_score?: number | null;
 };
 
 type StandingRow = {
@@ -112,19 +114,43 @@ export function HomeDashboard() {
       return;
     }
 
-    const [{ data: entryRows, error: entryError }, { data: matchRows, error: matchError }, { data: standingRows, error: standingError }] =
-      await Promise.all([
-        supabase.from("division_entries").select("id, division_id, label").in("division_id", divisionIds),
-        supabase
-          .from("matches")
-          .select("id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_end, status")
-          .in("division_id", divisionIds)
-          .order("schedule_week_start", { ascending: true }),
-        supabase.from("standings").select("division_id, entry_id, wins, losses, points").in("division_id", divisionIds)
-      ]);
+    const [{ data: entryRows, error: entryError }, { data: standingRows, error: standingError }] = await Promise.all([
+      supabase.from("division_entries").select("id, division_id, label").in("division_id", divisionIds),
+      supabase.from("standings").select("division_id, entry_id, wins, losses, points").in("division_id", divisionIds)
+    ]);
 
-    if (entryError || matchError || standingError) {
-      setMessage(entryError?.message || matchError?.message || standingError?.message || "Could not load dashboard.");
+    if (entryError || standingError) {
+      setMessage(entryError?.message || standingError?.message || "Could not load dashboard.");
+      return;
+    }
+
+    const { data: matchRows, error: matchError } = await supabase
+      .from("matches")
+      .select(matchSelectWithTargetScore)
+      .in("division_id", divisionIds)
+      .order("schedule_week_start", { ascending: true });
+
+    if (matchError) {
+      if (!isMissingTargetScoreColumn(matchError)) {
+        setMessage(matchError.message);
+        return;
+      }
+
+      const { data: fallbackMatches, error: fallbackMatchError } = await supabase
+        .from("matches")
+        .select(matchSelectBasic)
+        .in("division_id", divisionIds)
+        .order("schedule_week_start", { ascending: true });
+
+      if (fallbackMatchError) {
+        setMessage(fallbackMatchError.message);
+        return;
+      }
+
+      setEntries((entryRows || []) as DivisionEntryRow[]);
+      setMatches(((fallbackMatches || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 })));
+      setStandings(((standingRows || []) as StandingRow[]).sort((a, b) => b.points - a.points || b.wins - a.wins));
+      setMessage("Dashboard loaded.");
       return;
     }
 
@@ -187,6 +213,7 @@ export function HomeDashboard() {
                     <div className="match-meta">
                       <span className="pill blue">{division?.name || "Division"}</span>
                       <span className="pill">Round {match.round}</span>
+                      <span className="pill">To {match.target_score || 11}</span>
                     </div>
                     <div className="versus">
                       <span>{entryA?.label || "Entry A"}</span>

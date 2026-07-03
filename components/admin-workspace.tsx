@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, Check, ListChecks, Plus, Shuffle, Trophy, Upload, UsersRound } from "lucide-react";
 import { generateRoundRobinSchedule } from "@/lib/league-rules";
+import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { DivisionEntry, DivisionFormat, MatchStatus, Sport } from "@/lib/types";
 
@@ -57,6 +58,7 @@ type MatchRow = {
   extension_week_start: string;
   extension_week_end: string;
   status: MatchStatus;
+  target_score?: number | null;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -76,6 +78,7 @@ export function AdminWorkspace() {
   const [savingTournament, setSavingTournament] = useState(false);
   const [savingDivision, setSavingDivision] = useState(false);
   const [generatingSchedule, setGeneratingSchedule] = useState(false);
+  const [scheduleTargetScore, setScheduleTargetScore] = useState("11");
   const [savingPlayer, setSavingPlayer] = useState(false);
   const [importingPlayers, setImportingPlayers] = useState(false);
   const [assigningEntry, setAssigningEntry] = useState(false);
@@ -288,16 +291,32 @@ export function AdminWorkspace() {
 
     const { data, error } = await supabase
       .from("matches")
-      .select(
-        "id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status"
-      )
+      .select(matchSelectWithTargetScore)
       .in("division_id", divisionIds)
       .order("schedule_week_start", { ascending: true })
       .order("round", { ascending: true });
 
     if (error) {
-      setMessage(error.message);
-      return [];
+      if (!isMissingTargetScoreColumn(error)) {
+        setMessage(error.message);
+        return [];
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("matches")
+        .select(matchSelectBasic)
+        .in("division_id", divisionIds)
+        .order("schedule_week_start", { ascending: true })
+        .order("round", { ascending: true });
+
+      if (fallbackError) {
+        setMessage(fallbackError.message);
+        return [];
+      }
+
+      const fallbackRows = ((fallbackData || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 }));
+      setMatches(fallbackRows);
+      return fallbackRows;
     }
 
     const rows = (data || []) as MatchRow[];
@@ -537,12 +556,14 @@ export function AdminWorkspace() {
 
     setGeneratingSchedule(true);
     setMessage("");
+    const targetScore = Number(scheduleTargetScore) || 11;
 
     const rowsToInsert: Array<{
       division_id: string;
       round: number;
       entry_a_id: string;
       entry_b_id: string;
+      target_score: number;
       schedule_week_start: string;
       schedule_week_end: string;
       extension_week_start: string;
@@ -588,6 +609,7 @@ export function AdminWorkspace() {
           round: match.round,
           entry_a_id: match.entryAId,
           entry_b_id: match.entryBId,
+          target_score: targetScore,
           schedule_week_start: match.scheduleWeekStart,
           schedule_week_end: match.scheduleWeekEnd,
           extension_week_start: match.extensionWeekStart,
@@ -603,24 +625,53 @@ export function AdminWorkspace() {
       return;
     }
 
+    let insertData: MatchRow[] | null = null;
+    let insertErrorMessage = "";
+    let savedTargetScore = true;
+
     const { data, error } = await supabase
       .from("matches")
       .insert(rowsToInsert)
-      .select(
-        "id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status"
-      );
+      .select(matchSelectWithTargetScore);
+
+    if (error && isMissingTargetScoreColumn(error)) {
+      savedTargetScore = false;
+      const rowsWithoutTargetScore = rowsToInsert.map((row) => ({
+        division_id: row.division_id,
+        round: row.round,
+        entry_a_id: row.entry_a_id,
+        entry_b_id: row.entry_b_id,
+        schedule_week_start: row.schedule_week_start,
+        schedule_week_end: row.schedule_week_end,
+        extension_week_start: row.extension_week_start,
+        extension_week_end: row.extension_week_end,
+        status: row.status
+      }));
+      const fallback = await supabase.from("matches").insert(rowsWithoutTargetScore).select(matchSelectBasic);
+      insertData = ((fallback.data || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 }));
+      insertErrorMessage = fallback.error?.message || "";
+    } else {
+      insertData = (data || []) as MatchRow[];
+      insertErrorMessage = error?.message || "";
+    }
 
     setGeneratingSchedule(false);
-    if (error) {
-      setMessage(error.message);
+    if (insertErrorMessage) {
+      setMessage(insertErrorMessage);
       return;
     }
 
-    const created = (data || []) as MatchRow[];
+    const created = insertData || [];
     setMatches((current) =>
       [...current, ...created].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round)
     );
-    setMessage(`Generated ${created.length} match${created.length === 1 ? "" : "es"}.${skipped.length ? ` ${skipped.join(". ")}.` : ""}`);
+    setMessage(
+      savedTargetScore
+        ? `Generated ${created.length} match${created.length === 1 ? "" : "es"} to ${targetScore} points.${
+            skipped.length ? ` ${skipped.join(". ")}.` : ""
+          }`
+        : `Generated ${created.length} match${created.length === 1 ? "" : "es"} with the default 11 points. Run supabase/add-match-target-score.sql before using custom target scores.`
+    );
   }
 
   function publishStandings() {
@@ -650,6 +701,13 @@ export function AdminWorkspace() {
               : "Create a tournament, add divisions, approve entries, then generate the schedule."}
           </p>
           <div className="toolbar">
+            <label className="field compact-field">
+              <span>Game target score</span>
+              <select onChange={(event) => setScheduleTargetScore(event.target.value)} value={scheduleTargetScore}>
+                <option value="11">11 points</option>
+                <option value="15">15 points</option>
+              </select>
+            </label>
             <button className="button" disabled={!selectedTournament || generatingSchedule} onClick={generateSchedule} type="button">
               <Shuffle size={18} aria-hidden />
               {generatingSchedule ? "Generating..." : "Generate schedule"}
@@ -1011,6 +1069,7 @@ export function AdminWorkspace() {
                   <div className="match-meta">
                     <span className="pill blue">{division?.name || "Division"}</span>
                     <span className="pill">Round {match.round}</span>
+                    <span className="pill">To {match.target_score || 11}</span>
                   </div>
                   <div className="versus">
                     <span>{entryA?.label || "Entry A"}</span>

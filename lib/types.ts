@@ -53,6 +53,7 @@ export type Match = {
   round: number;
   entryAId: string;
   entryBId: string;
+  targetScore?: number;
   scheduleWeekStart: string;
   scheduleWeekEnd: string;
   extensionWeekStart: string;

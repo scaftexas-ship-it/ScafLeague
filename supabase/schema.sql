@@ -89,6 +89,7 @@ create table public.matches (
   round integer not null check (round > 0),
   entry_a_id uuid not null references public.division_entries(id) on delete cascade,
   entry_b_id uuid not null references public.division_entries(id) on delete cascade,
+  target_score integer not null default 11 check (target_score > 0),
   schedule_week_start date not null,
   schedule_week_end date not null,
   extension_week_start date not null,
