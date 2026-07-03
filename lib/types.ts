@@ -1,0 +1,84 @@
+export type Sport = "pickleball" | "badminton" | "tennis" | "volleyball";
+export type DivisionFormat = "singles" | "doubles";
+export type UserRole = "admin" | "player";
+export type MatchStatus = "scheduled" | "score_submitted" | "completed" | "forfeit" | "cancelled";
+export type RegistrationStatus = "pending" | "approved" | "declined";
+
+export type Player = {
+  id: string;
+  name: string;
+  email: string;
+  rating?: string;
+};
+
+export type Team = {
+  id: string;
+  name: string;
+  playerIds: string[];
+};
+
+export type DivisionEntry = {
+  id: string;
+  divisionId: string;
+  label: string;
+  playerIds: string[];
+};
+
+export type Tournament = {
+  id: string;
+  name: string;
+  sport: Sport;
+  startDate: string;
+  endDate: string;
+  clubName: string;
+};
+
+export type Division = {
+  id: string;
+  tournamentId: string;
+  name: string;
+  skillLevel: string;
+  format: DivisionFormat;
+};
+
+export type MatchSet = {
+  setNumber: number;
+  entryAScore: number;
+  entryBScore: number;
+};
+
+export type Match = {
+  id: string;
+  divisionId: string;
+  round: number;
+  entryAId: string;
+  entryBId: string;
+  scheduleWeekStart: string;
+  scheduleWeekEnd: string;
+  extensionWeekStart: string;
+  extensionWeekEnd: string;
+  status: MatchStatus;
+  sets: MatchSet[];
+  winnerEntryId?: string;
+  forfeitByEntryId?: string;
+};
+
+export type Registration = {
+  id: string;
+  divisionId: string;
+  playerId: string;
+  status: RegistrationStatus;
+};
+
+export type Standing = {
+  entryId: string;
+  played: number;
+  wins: number;
+  losses: number;
+  forfeitsWon: number;
+  forfeitsLost: number;
+  cancelled: number;
+  points: number;
+  setsWon: number;
+  setsLost: number;
+};
