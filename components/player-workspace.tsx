@@ -472,9 +472,13 @@ function MatchCard({
     set3B: ""
   });
   const playerEntryId = myEntryIds.find((entryId) => entryId === match.entry_a_id || entryId === match.entry_b_id) || "";
+  const isAdminPreview = canAct && myEntryIds.length === 0;
   const forfeitMatch = toDomainMatch(match);
   const canForfeit = Boolean(playerEntryId && canClaimForfeit(forfeitMatch, playerEntryId));
+  const canForfeitForEntryA = isAdminPreview && canClaimForfeit(forfeitMatch, match.entry_a_id);
+  const canForfeitForEntryB = isAdminPreview && canClaimForfeit(forfeitMatch, match.entry_b_id);
   const canEdit = canAct && (match.status === "scheduled" || match.status === "score_submitted");
+  const forfeitReason = getForfeitUnavailableReason(match);
 
   async function handleScoreSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -485,10 +489,10 @@ function MatchCard({
     setShowScoreForm(false);
   }
 
-  async function handleClaimForfeit() {
-    if (!playerEntryId) return;
+  async function handleClaimForfeit(claimedByEntryId: string) {
+    if (!claimedByEntryId) return;
     setClaimingForfeit(true);
-    await onClaimForfeit(match, playerEntryId);
+    await onClaimForfeit(match, claimedByEntryId);
     setClaimingForfeit(false);
   }
 
@@ -511,11 +515,35 @@ function MatchCard({
           <Send size={18} aria-hidden />
           Submit score
         </button>
-        <button className="button warning" disabled={!canForfeit || claimingForfeit} onClick={handleClaimForfeit} type="button">
-          <Flag size={18} aria-hidden />
-          {claimingForfeit ? "Claiming..." : "Claim forfeit"}
-        </button>
+        {isAdminPreview ? (
+          <>
+            <button
+              className="button warning"
+              disabled={!canForfeitForEntryA || claimingForfeit}
+              onClick={() => handleClaimForfeit(match.entry_a_id)}
+              type="button"
+            >
+              <Flag size={18} aria-hidden />
+              {claimingForfeit ? "Claiming..." : `Forfeit win: ${entryA?.label || "Entry A"}`}
+            </button>
+            <button
+              className="button warning"
+              disabled={!canForfeitForEntryB || claimingForfeit}
+              onClick={() => handleClaimForfeit(match.entry_b_id)}
+              type="button"
+            >
+              <Flag size={18} aria-hidden />
+              {claimingForfeit ? "Claiming..." : `Forfeit win: ${entryB?.label || "Entry B"}`}
+            </button>
+          </>
+        ) : (
+          <button className="button warning" disabled={!canForfeit || claimingForfeit} onClick={() => handleClaimForfeit(playerEntryId)} type="button">
+            <Flag size={18} aria-hidden />
+            {claimingForfeit ? "Claiming..." : "Claim forfeit"}
+          </button>
+        )}
       </div>
+      {!canForfeit && !canForfeitForEntryA && !canForfeitForEntryB && forfeitReason ? <p className="subtle">{forfeitReason}</p> : null}
       {showScoreForm ? (
         <form className="score-form" onSubmit={handleScoreSubmit}>
           <ScoreSetFields
@@ -554,6 +582,19 @@ function MatchCard({
       ) : null}
     </article>
   );
+}
+
+function getForfeitUnavailableReason(match: MatchRow) {
+  if (match.status === "completed" || match.status === "forfeit") {
+    return "Forfeit is locked because a result has already been posted.";
+  }
+  if (match.status === "cancelled") {
+    return "Forfeit is locked because this match is cancelled.";
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  if (today < match.schedule_week_start) return "Forfeit opens during the schedule week.";
+  if (today > match.schedule_week_end) return "Forfeit is not allowed after the schedule week.";
+  return "";
 }
 
 function ScoreSetFields({
