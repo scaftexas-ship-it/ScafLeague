@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CalendarPlus, ClipboardList, Medal, UsersRound } from "lucide-react";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
@@ -50,6 +51,7 @@ type StandingRow = {
 };
 
 export function HomeDashboard() {
+  const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [tournament, setTournament] = useState<TournamentRow | null>(null);
   const [divisions, setDivisions] = useState<DivisionRow[]>([]);
@@ -72,6 +74,23 @@ export function HomeDashboard() {
     const { data: authData } = await supabase.auth.getUser();
     if (!authData.user) {
       setMessage("Sign in to view live tournament data.");
+      return;
+    }
+
+    const { data: appUser, error: appUserError } = await supabase
+      .from("users")
+      .select("id, role")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+
+    if (appUserError || !appUser) {
+      await supabase.auth.signOut();
+      setMessage("This login is not registered for SCAF League. Ask an admin to add your user account first.");
+      return;
+    }
+
+    if (appUser.role === "player") {
+      router.replace("/player");
       return;
     }
 

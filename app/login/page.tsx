@@ -7,7 +7,7 @@ export default function LoginPage() {
         <div>
           <p className="eyebrow">Secure access</p>
           <h1>Sign in</h1>
-          <p className="hero-copy">Admins manage tournaments and players manage their own match actions.</p>
+          <p className="hero-copy">Use the account already registered by the club. Admins open the control center, and players open only their own match schedule.</p>
         </div>
         <AuthPanel />
       </section>
