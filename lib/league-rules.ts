@@ -17,7 +17,9 @@ export function canClaimForfeit(match: Match, entryId: string, today = new Date(
   if (match.allowForfeit === false) return false;
   if (match.status !== "scheduled" && match.status !== "score_submitted") return false;
   if (match.entryAId !== entryId && match.entryBId !== entryId) return false;
-  return isWithinInclusive(today, match.scheduleWeekStart, match.scheduleWeekEnd);
+  const forfeitStart = addDays(match.scheduleWeekStart, -(match.forfeitBeforeDays || 0));
+  const forfeitEnd = addDays(match.scheduleWeekEnd, match.forfeitAfterDays || 0);
+  return isWithinInclusive(today, forfeitStart, forfeitEnd);
 }
 
 export function expireUnplayedMatches(matches: Match[], today = new Date().toISOString().slice(0, 10)) {

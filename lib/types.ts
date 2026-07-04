@@ -57,7 +57,11 @@ export type Match = {
   targetScore?: number;
   numberOfSets?: number;
   restrictScoreUpdates?: boolean;
+  scoreUpdateBeforeDays?: number;
+  scoreUpdateAfterDays?: number;
   allowForfeit?: boolean;
+  forfeitBeforeDays?: number;
+  forfeitAfterDays?: number;
   scheduleWeekStart: string;
   scheduleWeekEnd: string;
   extensionWeekStart: string;

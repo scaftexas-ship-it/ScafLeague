@@ -89,7 +89,11 @@ type MatchRow = {
   target_score?: number | null;
   number_of_sets?: number | null;
   restrict_score_updates?: boolean | null;
+  score_update_before_days?: number | null;
+  score_update_after_days?: number | null;
   allow_forfeit?: boolean | null;
+  forfeit_before_days?: number | null;
+  forfeit_after_days?: number | null;
 };
 
 type ManualMatchRow = {
@@ -124,7 +128,11 @@ export function AdminWorkspace() {
   const [scheduleDateType, setScheduleDateType] = useState("play_by");
   const [scheduleStartDate, setScheduleStartDate] = useState(today);
   const [restrictScoreUpdates, setRestrictScoreUpdates] = useState(false);
+  const [scoreUpdateBeforeDays, setScoreUpdateBeforeDays] = useState("7");
+  const [scoreUpdateAfterDays, setScoreUpdateAfterDays] = useState("7");
   const [allowGameForfeit, setAllowGameForfeit] = useState(true);
+  const [forfeitBeforeDays, setForfeitBeforeDays] = useState("7");
+  const [forfeitAfterDays, setForfeitAfterDays] = useState("0");
   const [changeWinningScore, setChangeWinningScore] = useState(false);
   const [selectedSchedulePlayerIds, setSelectedSchedulePlayerIds] = useState<string[]>([]);
   const [selectedScheduleTeamIds, setSelectedScheduleTeamIds] = useState<string[]>([]);
@@ -544,7 +552,11 @@ export function AdminWorkspace() {
         target_score: 11,
         number_of_sets: 3,
         restrict_score_updates: false,
-        allow_forfeit: true
+        score_update_before_days: 0,
+        score_update_after_days: 0,
+        allow_forfeit: true,
+        forfeit_before_days: 0,
+        forfeit_after_days: 0
       }));
       setMatches(fallbackRows);
       return fallbackRows;
@@ -1191,7 +1203,11 @@ export function AdminWorkspace() {
       target_score: number;
       number_of_sets: number;
       restrict_score_updates: boolean;
+      score_update_before_days: number;
+      score_update_after_days: number;
       allow_forfeit: boolean;
+      forfeit_before_days: number;
+      forfeit_after_days: number;
       schedule_week_start: string;
       schedule_week_end: string;
       extension_week_start: string;
@@ -1206,7 +1222,11 @@ export function AdminWorkspace() {
       target_score: targetScore,
       number_of_sets: Number(scheduleNumberOfSets) || 3,
       restrict_score_updates: restrictScoreUpdates,
+      score_update_before_days: Number(scoreUpdateBeforeDays) || 0,
+      score_update_after_days: Number(scoreUpdateAfterDays) || 0,
       allow_forfeit: allowGameForfeit,
+      forfeit_before_days: Number(forfeitBeforeDays) || 0,
+      forfeit_after_days: Number(forfeitAfterDays) || 0,
       schedule_week_start: match.scheduleWeekStart,
       schedule_week_end: match.scheduleWeekEnd,
       extension_week_start: match.extensionWeekStart,
@@ -1239,7 +1259,11 @@ export function AdminWorkspace() {
         target_score: 11,
         number_of_sets: 3,
         restrict_score_updates: false,
-        allow_forfeit: true
+        score_update_before_days: 0,
+        score_update_after_days: 0,
+        allow_forfeit: true,
+        forfeit_before_days: 0,
+        forfeit_after_days: 0
       }));
       insertErrorMessage = fallback.error?.message || "";
     } else {
