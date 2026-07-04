@@ -33,6 +33,7 @@ type MatchRow = {
   id: string;
   division_id: string;
   round: number;
+  round_label?: string | null;
   entry_a_id: string;
   entry_b_id: string;
   schedule_week_start: string;
@@ -48,6 +49,12 @@ type StandingRow = {
   wins: number;
   losses: number;
   points: number;
+};
+
+type AppUserAccessRow = {
+  id: string;
+  role: "admin" | "player";
+  access_disabled?: boolean | null;
 };
 
 export function HomeDashboard() {
@@ -77,13 +84,18 @@ export function HomeDashboard() {
       return;
     }
 
-    const { data: appUser, error: appUserError } = await supabase
+    let { data: appUser, error: appUserError } = (await supabase
       .from("users")
-      .select("id, role")
+      .select("id, role, access_disabled")
       .eq("id", authData.user.id)
-      .maybeSingle();
+      .maybeSingle()) as { data: AppUserAccessRow | null; error: { message?: string } | null };
+    if (appUserError && isMissingAccessDisabledColumn(appUserError)) {
+      const fallback = await supabase.from("users").select("id, role").eq("id", authData.user.id).maybeSingle();
+      appUser = fallback.data as AppUserAccessRow | null;
+      appUserError = fallback.error;
+    }
 
-    if (appUserError || !appUser) {
+    if (appUserError || !appUser || appUser.access_disabled) {
       await supabase.auth.signOut();
       router.replace("/login");
       return;
@@ -231,7 +243,7 @@ export function HomeDashboard() {
                   <article className="match-card" key={match.id}>
                     <div className="match-meta">
                       <span className="pill blue">{division?.name || "Division"}</span>
-                      <span className="pill">Round {match.round}</span>
+                      <span className="pill">{match.round_label || `Round ${match.round}`}</span>
                       <span className="pill">To {match.target_score || 11}</span>
                     </div>
                     <div className="versus">
@@ -320,4 +332,9 @@ function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: strin
       <p className="subtle">{body}</p>
     </div>
   );
+}
+
+function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("access_disabled") || message.includes("schema cache");
 }

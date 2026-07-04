@@ -335,6 +335,102 @@ h3 {
   min-height: 42px;
 }
 
+.schedule-builder,
+.entry-picker,
+.team-builder {
+  display: grid;
+  gap: 12px;
+}
+
+.entry-picker {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.team-builder {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.picker-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.check-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.check-toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.compact-toolbar {
+  margin: 0;
+  justify-content: flex-start;
+}
+
+.check-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  font-weight: 800;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.check-row small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.selected-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.replace-schedule {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.replace-schedule p {
+  margin: 0;
+}
+
 .file-drop {
   position: relative;
   display: grid;
@@ -374,6 +470,17 @@ h3 {
 
 .compact-row:last-child {
   border-bottom: 0;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.user-row select,
+.user-row button {
+  width: 100%;
 }
 
 .admin-columns {
@@ -424,5 +531,20 @@ h3 {
   .grid.three,
   .admin-columns {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .user-row {
+    grid-template-columns: 1fr 116px 104px;
+    align-items: center;
+  }
+
+  .team-builder {
+    grid-template-columns: 1fr 1fr 1fr auto;
+    align-items: end;
+  }
+
+  .picker-controls {
+    grid-template-columns: 1fr 160px auto;
+    align-items: end;
   }
 }

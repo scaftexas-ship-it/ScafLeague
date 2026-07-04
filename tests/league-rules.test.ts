@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateStandings, canClaimForfeit, expireUnplayedMatches, generateRoundRobinSchedule } from "../lib/league-rules.ts";
+import {
+  calculateStandings,
+  canClaimForfeit,
+  expireUnplayedMatches,
+  generateEliminatorSchedule,
+  generateRoundRobinSchedule
+} from "../lib/league-rules.ts";
 import type { DivisionEntry, Match } from "../lib/types.ts";
 
 const entries: DivisionEntry[] = [
@@ -42,6 +48,55 @@ test("generates odd round robin with byes", () => {
 
   assert.equal(matches.length, 3);
   assert.equal(new Set(matches.map((match) => [match.entryAId, match.entryBId].sort().join(":"))).size, 3);
+});
+
+test("schedules round robin rounds every week", () => {
+  const matches = generateRoundRobinSchedule({
+    divisionId: "d-1",
+    entries,
+    startDate: "2026-07-06",
+    endDate: "2026-07-20"
+  });
+
+  const roundStarts = Array.from(new Set(matches.map((match) => match.scheduleWeekStart)));
+  assert.deepEqual(roundStarts, ["2026-07-06", "2026-07-13", "2026-07-20"]);
+});
+
+test("generates quarterfinal eliminator matches for eight entries", () => {
+  const matches = generateEliminatorSchedule({
+    divisionId: "d-1",
+    entries: [
+      ...entries,
+      { id: "e-5", divisionId: "d-1", label: "E", playerIds: ["p-5"] },
+      { id: "e-6", divisionId: "d-1", label: "F", playerIds: ["p-6"] },
+      { id: "e-7", divisionId: "d-1", label: "G", playerIds: ["p-7"] },
+      { id: "e-8", divisionId: "d-1", label: "H", playerIds: ["p-8"] }
+    ],
+    startDate: "2026-07-06",
+    endDate: "2026-09-30"
+  });
+
+  assert.equal(matches.length, 4);
+  assert.equal(matches.every((match) => match.roundLabel === "Quarterfinal"), true);
+  assert.equal(new Set(matches.flatMap((match) => [match.entryAId, match.entryBId])).size, 8);
+});
+
+test("generates pre-quarter eliminator play-in matches when entries need byes", () => {
+  const twelveEntries = Array.from({ length: 12 }, (_, index) => ({
+    id: `e-${index + 1}`,
+    divisionId: "d-1",
+    label: String.fromCharCode(65 + index),
+    playerIds: [`p-${index + 1}`]
+  }));
+  const matches = generateEliminatorSchedule({
+    divisionId: "d-1",
+    entries: twelveEntries,
+    startDate: "2026-07-06",
+    endDate: "2026-09-30"
+  });
+
+  assert.equal(matches.length, 4);
+  assert.equal(matches.every((match) => match.roundLabel === "Pre Quarterfinal"), true);
 });
 
 test("forfeit can only be claimed during scheduled week by a match entry", () => {

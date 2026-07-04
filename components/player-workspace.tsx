@@ -15,6 +15,7 @@ type AppUser = {
   role: "admin" | "player";
   full_name: string;
   email: string;
+  access_disabled?: boolean | null;
 };
 
 type PlayerProfileRow = {
@@ -43,6 +44,7 @@ type MatchRow = {
   id: string;
   division_id: string;
   round: number;
+  round_label?: string | null;
   entry_a_id: string;
   entry_b_id: string;
   schedule_week_start: string;
@@ -90,18 +92,25 @@ export function PlayerWorkspace() {
       return;
     }
 
-    const userResult = await withTimeout(
-      supabase.from("users").select("id, club_id, role, full_name, email").eq("id", authData.user.id).single(),
+    let userResult = await withTimeout(
+      supabase.from("users").select("id, club_id, role, full_name, email, access_disabled").eq("id", authData.user.id).single(),
       6000,
       "The app user profile lookup did not respond. Check public.users and RLS policies."
     );
+    if (!("timeout" in userResult) && userResult.error && isMissingAccessDisabledColumn(userResult.error)) {
+      userResult = await withTimeout(
+        supabase.from("users").select("id, club_id, role, full_name, email").eq("id", authData.user.id).single(),
+        6000,
+        "The app user profile lookup did not respond. Check public.users and RLS policies."
+      );
+    }
     if ("timeout" in userResult) {
       setMessage(userResult.timeout);
       return;
     }
     const { data: userRow, error: userError } = userResult;
 
-    if (userError || !userRow) {
+    if (userError || !userRow || (userRow as AppUser).access_disabled) {
       setMessage("Your login works, but no app user profile was found.");
       await supabase.auth.signOut();
       router.replace("/login");
@@ -338,7 +347,9 @@ export function PlayerWorkspace() {
     }
 
     setMatches((current) =>
-      current.map((item) => (item.id === match.id ? ({ ...(data as MatchRow), target_score: match.target_score || 11 } as MatchRow) : item))
+      current.map((item) =>
+        item.id === match.id ? ({ ...(data as MatchRow), round_label: match.round_label, target_score: match.target_score || 11 } as MatchRow) : item
+      )
     );
     setMessage("Score submitted.");
   }
@@ -376,7 +387,9 @@ export function PlayerWorkspace() {
     }
 
     setMatches((current) =>
-      current.map((item) => (item.id === match.id ? ({ ...(data as MatchRow), target_score: match.target_score || 11 } as MatchRow) : item))
+      current.map((item) =>
+        item.id === match.id ? ({ ...(data as MatchRow), round_label: match.round_label, target_score: match.target_score || 11 } as MatchRow) : item
+      )
     );
     setMessage("Forfeit recorded.");
   }
@@ -536,7 +549,7 @@ function MatchCard({
     <article className="match-card">
       <div className="match-meta">
         <span className="pill blue">{division?.name || "Division"}</span>
-        <span className="pill">Round {match.round}</span>
+        <span className="pill">{match.round_label || `Round ${match.round}`}</span>
         <span className="pill">To {targetScore}</span>
       </div>
       <div className="versus">
@@ -727,6 +740,7 @@ function toDomainMatch(match: MatchRow): Match {
     id: match.id,
     divisionId: match.division_id,
     round: match.round,
+    roundLabel: match.round_label || undefined,
     entryAId: match.entry_a_id,
     entryBId: match.entry_b_id,
     targetScore: match.target_score || 11,
@@ -747,6 +761,11 @@ function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: strin
       <p className="subtle">{body}</p>
     </div>
   );
+}
+
+function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("access_disabled") || message.includes("schema cache");
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, timeout: string): Promise<T | { timeout: string }> {

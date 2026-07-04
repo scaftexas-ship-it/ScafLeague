@@ -51,6 +51,7 @@ export type Match = {
   id: string;
   divisionId: string;
   round: number;
+  roundLabel?: string;
   entryAId: string;
   entryBId: string;
   targetScore?: number;

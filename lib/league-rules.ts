@@ -139,7 +139,7 @@ export function generateRoundRobinSchedule(params: {
 
   for (let round = 0; round < rounds; round += 1) {
     const current = [competitors[0], ...rotating];
-    const scheduleWeekStart = addDays(params.startDate, round * 14);
+    const scheduleWeekStart = addDays(params.startDate, round * 7);
     const scheduleWeekEnd = addDays(scheduleWeekStart, 6);
     const extensionWeekStart = addDays(scheduleWeekStart, 7);
     const extensionWeekEnd = addDays(scheduleWeekStart, 13);
@@ -169,6 +169,62 @@ export function generateRoundRobinSchedule(params: {
     }
 
     rotating.unshift(rotating.pop()!);
+  }
+
+  return matches;
+}
+
+function nextPowerOfTwo(value: number) {
+  let power = 1;
+  while (power < value) power *= 2;
+  return power;
+}
+
+function getEliminatorRoundLabel(bracketSize: number) {
+  if (bracketSize >= 16) return "Pre Quarterfinal";
+  if (bracketSize === 8) return "Quarterfinal";
+  if (bracketSize === 4) return "Semifinal";
+  return "Final";
+}
+
+export function generateEliminatorSchedule(params: {
+  divisionId: string;
+  entries: DivisionEntry[];
+  startDate: string;
+  endDate: string;
+}): Match[] {
+  const entries = [...params.entries].sort((a, b) => a.label.localeCompare(b.label));
+  if (entries.length < 2) return [];
+
+  const scheduleWeekStart = params.startDate;
+  if (new Date(`${scheduleWeekStart}T00:00:00.000Z`).getTime() > new Date(`${params.endDate}T00:00:00.000Z`).getTime()) return [];
+
+  const bracketSize = nextPowerOfTwo(entries.length);
+  const firstRoundEntrantCount = entries.length === bracketSize ? entries.length : (entries.length - bracketSize / 2) * 2;
+  const entrants = entries.length === bracketSize ? entries : entries.slice(entries.length - firstRoundEntrantCount);
+  const roundLabel = getEliminatorRoundLabel(bracketSize);
+  const scheduleWeekEnd = addDays(scheduleWeekStart, 6);
+  const extensionWeekStart = addDays(scheduleWeekStart, 7);
+  const extensionWeekEnd = addDays(scheduleWeekStart, 13);
+  const matches: Match[] = [];
+
+  for (let index = 0; index < entrants.length / 2; index += 1) {
+    const entryA = entrants[index];
+    const entryB = entrants[entrants.length - 1 - index];
+    matches.push({
+      id: `${params.divisionId}-elim-r1-${entryA.id}-${entryB.id}`,
+      divisionId: params.divisionId,
+      round: 1,
+      roundLabel,
+      entryAId: entryA.id,
+      entryBId: entryB.id,
+      scheduleWeekStart,
+      scheduleWeekEnd,
+      extensionWeekStart,
+      extensionWeekEnd,
+      status: "scheduled",
+      sets: []
+    });
   }
 
   return matches;

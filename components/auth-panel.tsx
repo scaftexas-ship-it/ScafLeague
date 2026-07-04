@@ -10,6 +10,7 @@ type AppUser = {
   role: "admin" | "player";
   full_name: string;
   email: string;
+  access_disabled?: boolean | null;
 };
 
 export function AuthPanel() {
@@ -48,11 +49,27 @@ export function AuthPanel() {
 
   async function getRegisteredUser(userId: string) {
     if (!supabase) return null;
-    const { data, error } = await supabase.from("users").select("id, role, full_name, email").eq("id", userId).maybeSingle();
+    let { data, error } = (await supabase.from("users").select("id, role, full_name, email, access_disabled").eq("id", userId).maybeSingle()) as {
+      data: AppUser | null;
+      error: { message?: string } | null;
+    };
+
+    if (error && isMissingAccessDisabledColumn(error)) {
+      const fallback = await supabase.from("users").select("id, role, full_name, email").eq("id", userId).maybeSingle();
+      data = fallback.data as AppUser | null;
+      error = fallback.error;
+    }
 
     if (error || !data) {
       await supabase.auth.signOut();
       setMessage("This login is not registered for SCAF League. Ask an admin to add your user account first.");
+      setCurrentUser(null);
+      return null;
+    }
+
+    if ((data as AppUser).access_disabled) {
+      await supabase.auth.signOut();
+      setMessage("This login has been disabled by an admin.");
       setCurrentUser(null);
       return null;
     }
@@ -141,4 +158,9 @@ export function AuthPanel() {
       {message ? <p className="subtle">{message}</p> : null}
     </div>
   );
+}
+
+function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("access_disabled") || message.includes("schema cache");
 }

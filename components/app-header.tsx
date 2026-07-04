@@ -6,6 +6,10 @@ import { CalendarDays, ShieldCheck, Trophy, UserRound } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 
 type UserRole = "admin" | "player";
+type RoleRow = {
+  role?: UserRole;
+  access_disabled?: boolean | null;
+};
 
 export function AppHeader() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -39,8 +43,17 @@ export function AppHeader() {
       return;
     }
 
-    const { data } = await supabase.from("users").select("role").eq("id", authData.user.id).maybeSingle();
-    setRole((data?.role as UserRole | undefined) || null);
+    let { data, error } = (await supabase.from("users").select("role, access_disabled").eq("id", authData.user.id).maybeSingle()) as {
+      data: RoleRow | null;
+      error: { message?: string } | null;
+    };
+    if (error && isMissingAccessDisabledColumn(error)) {
+      const fallback = await supabase.from("users").select("role").eq("id", authData.user.id).maybeSingle();
+      data = fallback.data as RoleRow | null;
+      error = fallback.error;
+    }
+
+    setRole(error || data?.access_disabled ? null : data?.role || null);
     setChecked(true);
   }
 
@@ -67,4 +80,9 @@ export function AppHeader() {
       </nav>
     </header>
   );
+}
+
+function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("access_disabled") || message.includes("schema cache");
 }

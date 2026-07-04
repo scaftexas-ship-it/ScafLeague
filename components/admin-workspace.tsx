@@ -3,8 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarPlus, Check, ListChecks, Plus, Shuffle, Trophy, Upload, UsersRound } from "lucide-react";
-import { generateRoundRobinSchedule } from "@/lib/league-rules";
+import { CalendarPlus, Check, ListChecks, Plus, Shuffle, Trophy, Upload, UserPlus, UsersRound } from "lucide-react";
+import { generateEliminatorSchedule, generateRoundRobinSchedule } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { DivisionEntry, DivisionFormat, MatchStatus, Sport } from "@/lib/types";
@@ -15,6 +15,7 @@ type AdminUser = {
   role: "admin" | "player";
   full_name: string;
   email: string;
+  access_disabled?: boolean | null;
 };
 
 type TournamentRow = {
@@ -38,6 +39,25 @@ type PlayerProfileRow = {
   club_id: string;
   display_name: string;
   rating: string | null;
+  user_id: string | null;
+};
+
+type AppUserRow = {
+  id: string;
+  club_id: string;
+  role: "admin" | "player";
+  full_name: string;
+  email: string;
+  access_disabled?: boolean | null;
+};
+
+type PeopleImportRow = {
+  fullName: string;
+  email: string;
+  password?: string;
+  role: "admin" | "player";
+  rating?: string;
+  createPlayerProfile: boolean;
 };
 
 type DivisionEntryRow = {
@@ -48,10 +68,17 @@ type DivisionEntryRow = {
   team_id: string | null;
 };
 
+type TeamRow = {
+  id: string;
+  club_id: string;
+  name: string;
+};
+
 type MatchRow = {
   id: string;
   division_id: string;
   round: number;
+  round_label?: string | null;
   entry_a_id: string;
   entry_b_id: string;
   schedule_week_start: string;
@@ -72,19 +99,35 @@ export function AdminWorkspace() {
   const [selectedTournamentId, setSelectedTournamentId] = useState("");
   const [divisions, setDivisions] = useState<DivisionRow[]>([]);
   const [players, setPlayers] = useState<PlayerProfileRow[]>([]);
+  const [appUsers, setAppUsers] = useState<AppUserRow[]>([]);
+  const [teams, setTeams] = useState<TeamRow[]>([]);
   const [divisionEntries, setDivisionEntries] = useState<DivisionEntryRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [selectedSinglesDivisionId, setSelectedSinglesDivisionId] = useState("");
   const [selectedDoublesDivisionId, setSelectedDoublesDivisionId] = useState("");
+  const [selectedScheduleDivisionId, setSelectedScheduleDivisionId] = useState("");
+  const [scheduleType, setScheduleType] = useState<"round_robin" | "eliminator">("round_robin");
+  const [selectedSchedulePlayerIds, setSelectedSchedulePlayerIds] = useState<string[]>([]);
+  const [selectedScheduleTeamIds, setSelectedScheduleTeamIds] = useState<string[]>([]);
+  const [schedulePlayerSearch, setSchedulePlayerSearch] = useState("");
+  const [scheduleRatingFilter, setScheduleRatingFilter] = useState("all");
+  const [showSelectedSchedulePlayersOnly, setShowSelectedSchedulePlayersOnly] = useState(false);
+  const [scheduleTeamSearch, setScheduleTeamSearch] = useState("");
+  const [showSelectedScheduleTeamsOnly, setShowSelectedScheduleTeamsOnly] = useState(false);
+  const [replaceExistingSchedule, setReplaceExistingSchedule] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingTournament, setSavingTournament] = useState(false);
   const [savingDivision, setSavingDivision] = useState(false);
   const [generatingSchedule, setGeneratingSchedule] = useState(false);
   const [scheduleTargetScore, setScheduleTargetScore] = useState("11");
   const [savingPlayer, setSavingPlayer] = useState(false);
+  const [invitingUser, setInvitingUser] = useState(false);
+  const [linkingUser, setLinkingUser] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState("");
   const [importingPlayers, setImportingPlayers] = useState(false);
   const [assigningEntry, setAssigningEntry] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
+  const [creatingScheduleTeam, setCreatingScheduleTeam] = useState(false);
   const [message, setMessage] = useState("Checking admin access...");
   const [tournamentForm, setTournamentForm] = useState({
     name: "",
@@ -100,10 +143,27 @@ export function AdminWorkspace() {
     displayName: "",
     rating: ""
   });
+  const [inviteForm, setInviteForm] = useState({
+    fullName: "",
+    email: "",
+    password: "",
+    role: "player" as "admin" | "player",
+    rating: "",
+    playerProfileMode: "__new"
+  });
+  const [linkForm, setLinkForm] = useState({
+    userId: "",
+    playerProfileId: ""
+  });
   const [assignmentForm, setAssignmentForm] = useState({
     playerId: ""
   });
   const [teamForm, setTeamForm] = useState({
+    name: "",
+    playerAId: "",
+    playerBId: ""
+  });
+  const [scheduleTeamForm, setScheduleTeamForm] = useState({
     name: "",
     playerAId: "",
     playerBId: ""
@@ -114,6 +174,28 @@ export function AdminWorkspace() {
   const doublesDivisions = divisions.filter((division) => division.format === "doubles");
   const selectedSinglesDivision = singlesDivisions.find((division) => division.id === selectedSinglesDivisionId);
   const selectedDoublesDivision = doublesDivisions.find((division) => division.id === selectedDoublesDivisionId);
+  const selectedScheduleDivision = divisions.find((division) => division.id === selectedScheduleDivisionId);
+  const selectedScheduleDivisionMatches = matches.filter((match) => match.division_id === selectedScheduleDivisionId);
+  const canReplaceExistingSchedule = selectedScheduleDivisionMatches.every((match) => match.status === "scheduled" || match.status === "cancelled");
+  const scheduleSelectionCount = selectedScheduleDivision?.format === "doubles" ? selectedScheduleTeamIds.length : selectedSchedulePlayerIds.length;
+  const ratingOptions = Array.from(new Set(players.map((player) => player.rating?.trim() || "No rating"))).sort((a, b) => a.localeCompare(b));
+  const filteredSchedulePlayers = players.filter((player) => {
+    const playerRating = player.rating?.trim() || "No rating";
+    const search = schedulePlayerSearch.trim().toLowerCase();
+    const matchesSearch =
+      !search || player.display_name.toLowerCase().includes(search) || playerRating.toLowerCase().includes(search);
+    const matchesRating = scheduleRatingFilter === "all" || playerRating === scheduleRatingFilter;
+    const matchesSelected = !showSelectedSchedulePlayersOnly || selectedSchedulePlayerIds.includes(player.id);
+    return matchesSearch && matchesRating && matchesSelected;
+  });
+  const filteredScheduleTeams = teams.filter((team) => {
+    const search = scheduleTeamSearch.trim().toLowerCase();
+    const matchesSearch = !search || team.name.toLowerCase().includes(search);
+    const matchesSelected = !showSelectedScheduleTeamsOnly || selectedScheduleTeamIds.includes(team.id);
+    return matchesSearch && matchesSelected;
+  });
+  const selectedSchedulePlayers = players.filter((player) => selectedSchedulePlayerIds.includes(player.id));
+  const selectedScheduleTeams = teams.filter((team) => selectedScheduleTeamIds.includes(team.id));
   const divisionName = `${divisionForm.skillLevel.trim()} ${divisionForm.format === "singles" ? "Singles" : "Doubles"}`;
 
   useEffect(() => {
@@ -136,8 +218,10 @@ export function AdminWorkspace() {
     if (divisions.length === 0) {
       setSelectedSinglesDivisionId("");
       setSelectedDoublesDivisionId("");
+      setSelectedScheduleDivisionId("");
       return;
     }
+    setSelectedScheduleDivisionId((current) => (current && divisions.some((division) => division.id === current) ? current : divisions[0]?.id || ""));
     setSelectedSinglesDivisionId((current) =>
       current && divisions.some((division) => division.id === current && division.format === "singles")
         ? current
@@ -149,6 +233,31 @@ export function AdminWorkspace() {
         : divisions.find((division) => division.format === "doubles")?.id || ""
     );
   }, [divisions]);
+
+  useEffect(() => {
+    if (!selectedScheduleDivision) {
+      setSelectedSchedulePlayerIds([]);
+      setSelectedScheduleTeamIds([]);
+      return;
+    }
+
+    const existingEntries = divisionEntries.filter((entry) => entry.division_id === selectedScheduleDivision.id);
+    if (selectedScheduleDivision.format === "doubles") {
+      setSelectedScheduleTeamIds(existingEntries.flatMap((entry) => (entry.team_id ? [entry.team_id] : [])));
+      return;
+    }
+
+    setSelectedSchedulePlayerIds(existingEntries.flatMap((entry) => (entry.player_id ? [entry.player_id] : [])));
+  }, [selectedScheduleDivision, divisionEntries]);
+
+  useEffect(() => {
+    setSchedulePlayerSearch("");
+    setScheduleRatingFilter("all");
+    setShowSelectedSchedulePlayersOnly(false);
+    setScheduleTeamSearch("");
+    setShowSelectedScheduleTeamsOnly(false);
+    setReplaceExistingSchedule(false);
+  }, [selectedScheduleDivisionId]);
 
   async function loadAdminData() {
     if (!supabase) {
@@ -177,11 +286,18 @@ export function AdminWorkspace() {
       return;
     }
 
-    const profileResult = await withTimeout(
-      supabase.from("users").select("id, club_id, role, full_name, email").eq("id", authData.user.id).single(),
+    let profileResult = await withTimeout(
+      supabase.from("users").select("id, club_id, role, full_name, email, access_disabled").eq("id", authData.user.id).single(),
       6000,
       "The app user profile lookup did not respond. Check the public.users admin row and RLS policies."
     );
+    if (!("timeout" in profileResult) && profileResult.error && isMissingAccessDisabledColumn(profileResult.error)) {
+      profileResult = await withTimeout(
+        supabase.from("users").select("id, club_id, role, full_name, email").eq("id", authData.user.id).single(),
+        6000,
+        "The app user profile lookup did not respond. Check the public.users admin row and RLS policies."
+      );
+    }
     if ("timeout" in profileResult) {
       setMessage(profileResult.timeout);
       setLoading(false);
@@ -204,9 +320,18 @@ export function AdminWorkspace() {
       return;
     }
 
-    setAdminUser(profile as AdminUser);
-    await loadPlayers((profile as AdminUser).club_id);
-    const loadedTournaments = await loadTournaments((profile as AdminUser).club_id);
+    const loadedAdmin = profile as AdminUser;
+    if (loadedAdmin.access_disabled) {
+      setMessage("This admin account is disabled.");
+      setLoading(false);
+      await supabase.auth.signOut();
+      router.replace("/login");
+      return;
+    }
+
+    setAdminUser(loadedAdmin);
+    await Promise.all([loadPlayers(loadedAdmin.club_id), loadAppUsers(loadedAdmin.club_id), loadTeams(loadedAdmin.club_id)]);
+    const loadedTournaments = await loadTournaments(loadedAdmin.club_id);
     setSelectedTournamentId((current) => current || loadedTournaments[0]?.id || "");
     setMessage(loadedTournaments.length > 0 ? "Admin access ready." : "Admin access ready. Create your first tournament.");
     setLoading(false);
@@ -253,7 +378,7 @@ export function AdminWorkspace() {
     if (!supabase) return [];
     const { data, error } = await supabase
       .from("player_profiles")
-      .select("id, club_id, display_name, rating")
+      .select("id, club_id, display_name, rating, user_id")
       .eq("club_id", clubId)
       .order("display_name", { ascending: true });
 
@@ -264,6 +389,59 @@ export function AdminWorkspace() {
 
     const rows = (data || []) as PlayerProfileRow[];
     setPlayers(rows);
+    return rows;
+  }
+
+  async function loadAppUsers(clubId: string) {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, club_id, role, full_name, email, access_disabled")
+      .eq("club_id", clubId)
+      .order("full_name", { ascending: true });
+
+    if (error) {
+      if (!isMissingAccessDisabledColumn(error)) {
+        setMessage(error.message);
+        return [];
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("users")
+        .select("id, club_id, role, full_name, email")
+        .eq("club_id", clubId)
+        .order("full_name", { ascending: true });
+
+      if (fallbackError) {
+        setMessage(fallbackError.message);
+        return [];
+      }
+
+      const fallbackRows = ((fallbackData || []) as AppUserRow[]).map((user) => ({ ...user, access_disabled: false }));
+      setAppUsers(fallbackRows);
+      return fallbackRows;
+    }
+
+    const rows = ((data || []) as AppUserRow[]).map((user) => ({ ...user, access_disabled: Boolean(user.access_disabled) }));
+    setAppUsers(rows);
+    return rows;
+  }
+
+  async function loadTeams(clubId: string) {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from("teams")
+      .select("id, club_id, name")
+      .eq("club_id", clubId)
+      .order("name", { ascending: true });
+
+    if (error) {
+      setMessage(error.message);
+      return [];
+    }
+
+    const rows = (data || []) as TeamRow[];
+    setTeams(rows);
     return rows;
   }
 
@@ -414,7 +592,7 @@ export function AdminWorkspace() {
         display_name: displayName,
         rating: playerForm.rating.trim() || null
       })
-      .select("id, club_id, display_name, rating")
+      .select("id, club_id, display_name, rating, user_id")
       .single();
 
     setSavingPlayer(false);
@@ -428,35 +606,197 @@ export function AdminWorkspace() {
     setMessage("Player added.");
   }
 
-  async function importPlayers(event: React.ChangeEvent<HTMLInputElement>) {
+  async function inviteUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (!supabase || !adminUser) return;
-    const file = event.target.files?.[0];
-    if (!file) return;
 
-    setImportingPlayers(true);
-    setMessage("");
-    const text = await file.text();
-    const rows = parsePlayerCsv(text, adminUser.club_id);
-
-    if (rows.length === 0) {
-      setImportingPlayers(false);
-      setMessage("No players found in the CSV. Use columns named display_name or name, and optional rating.");
-      event.target.value = "";
+    const fullName = inviteForm.fullName.trim();
+    const email = inviteForm.email.trim().toLowerCase();
+    const password = inviteForm.password.trim();
+    if (!fullName || !email) {
+      setMessage("Enter a name and email before creating the login.");
+      return;
+    }
+    if (password && password.length < 6) {
+      setMessage("Temporary password must be at least 6 characters.");
       return;
     }
 
-    const { data, error } = await supabase.from("player_profiles").insert(rows).select("id, club_id, display_name, rating");
-    setImportingPlayers(false);
-    event.target.value = "";
+    setInvitingUser(true);
+    setMessage("");
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      setInvitingUser(false);
+      setMessage("Sign in as an admin before inviting users.");
+      return;
+    }
+
+    const response = await fetch("/api/admin/users/invite/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        email,
+        fullName,
+        password: password || undefined,
+        role: inviteForm.role,
+        rating: inviteForm.rating,
+        createPlayerProfile: inviteForm.role === "player" && inviteForm.playerProfileMode === "__new",
+        playerProfileId: inviteForm.playerProfileMode && inviteForm.playerProfileMode !== "__new" ? inviteForm.playerProfileMode : undefined
+      })
+    });
+    const result = (await response.json()) as { error?: string };
+
+    setInvitingUser(false);
+    if (!response.ok) {
+      setMessage(result.error || "Could not create the login.");
+      return;
+    }
+
+    setInviteForm({ fullName: "", email: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
+    await Promise.all([loadAppUsers(adminUser.club_id), loadPlayers(adminUser.club_id)]);
+    setMessage(password ? `Login created for ${email}.` : `Login invite sent to ${email}.`);
+  }
+
+  async function updateUserRole(userId: string, role: "admin" | "player") {
+    if (!supabase || !adminUser) return;
+    if (userId === adminUser.id && role !== "admin") {
+      setMessage("You cannot remove your own admin role while signed in.");
+      return;
+    }
+    setUpdatingUserId(userId);
+    setMessage("");
+    const { error } = await supabase.from("users").update({ role }).eq("id", userId);
+    setUpdatingUserId("");
 
     if (error) {
       setMessage(error.message);
       return;
     }
 
-    const imported = (data || []) as PlayerProfileRow[];
-    setPlayers((current) => [...current, ...imported].sort((a, b) => a.display_name.localeCompare(b.display_name)));
-    setMessage(`${imported.length} player${imported.length === 1 ? "" : "s"} imported.`);
+    setAppUsers((current) => current.map((user) => (user.id === userId ? { ...user, role } : user)));
+    setMessage("User role updated.");
+  }
+
+  async function toggleUserAccess(user: AppUserRow) {
+    if (!supabase || !adminUser) return;
+    if (user.id === adminUser.id && !user.access_disabled) {
+      setMessage("You cannot disable your own admin account while signed in.");
+      return;
+    }
+
+    const nextDisabled = !user.access_disabled;
+    setUpdatingUserId(user.id);
+    setMessage("");
+    const { error } = await supabase.from("users").update({ access_disabled: nextDisabled }).eq("id", user.id);
+    setUpdatingUserId("");
+
+    if (error) {
+      setMessage(isMissingAccessDisabledColumn(error) ? "Run supabase/add-user-access-disabled.sql before disabling user access." : error.message);
+      return;
+    }
+
+    setAppUsers((current) => current.map((item) => (item.id === user.id ? { ...item, access_disabled: nextDisabled } : item)));
+    setMessage(nextDisabled ? "User access disabled." : "User access enabled.");
+  }
+
+  async function linkUserToPlayer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !adminUser || !linkForm.userId || !linkForm.playerProfileId) return;
+
+    setLinkingUser(true);
+    setMessage("");
+
+    const { error: unlinkError } = await supabase.from("player_profiles").update({ user_id: null }).eq("user_id", linkForm.userId);
+    if (unlinkError) {
+      setLinkingUser(false);
+      setMessage(unlinkError.message);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("player_profiles")
+      .update({ user_id: linkForm.userId })
+      .eq("id", linkForm.playerProfileId)
+      .eq("club_id", adminUser.club_id);
+
+    setLinkingUser(false);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setLinkForm({ userId: "", playerProfileId: "" });
+    await loadPlayers(adminUser.club_id);
+    setMessage("Login linked to player profile.");
+  }
+
+  async function importPeople(event: React.ChangeEvent<HTMLInputElement>) {
+    if (!supabase || !adminUser) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImportingPlayers(true);
+    setMessage("");
+    const rows = await parsePeopleImportFile(file);
+
+    if (rows.length === 0) {
+      setImportingPlayers(false);
+      setMessage("No people found. Use columns: full_name, email, role, password, rating.");
+      event.target.value = "";
+      return;
+    }
+
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      setImportingPlayers(false);
+      event.target.value = "";
+      setMessage("Sign in as an admin before importing users.");
+      return;
+    }
+
+    const errors: string[] = [];
+    let created = 0;
+    for (const row of rows) {
+      const response = await fetch("/api/admin/users/invite/", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email: row.email,
+          fullName: row.fullName,
+          password: row.password || undefined,
+          role: row.role,
+          rating: row.rating,
+          createPlayerProfile: row.createPlayerProfile
+        })
+      });
+      const result = (await response.json()) as { error?: string };
+      if (response.ok) {
+        created += 1;
+      } else {
+        errors.push(`${row.email}: ${result.error || "not imported"}`);
+      }
+    }
+
+    setImportingPlayers(false);
+    event.target.value = "";
+    await Promise.all([loadAppUsers(adminUser.club_id), loadPlayers(adminUser.club_id)]);
+    setMessage(
+      errors.length > 0
+        ? `Imported ${created} of ${rows.length}. ${errors.slice(0, 3).join(" ")}${errors.length > 3 ? " More errors hidden." : ""}`
+        : `Imported ${created} user${created === 1 ? "" : "s"}.`
+    );
   }
 
   async function assignSinglesPlayer(event: FormEvent<HTMLFormElement>) {
@@ -465,6 +805,10 @@ export function AdminWorkspace() {
 
     const player = players.find((item) => item.id === assignmentForm.playerId);
     if (!player) return;
+    if (divisionEntries.some((entry) => entry.division_id === selectedSinglesDivision.id && entry.player_id === player.id)) {
+      setMessage(`${player.display_name} is already assigned to ${selectedSinglesDivision.name}.`);
+      return;
+    }
 
     setAssigningEntry(true);
     setMessage("");
@@ -502,6 +846,10 @@ export function AdminWorkspace() {
     if (!playerA || !playerB) return;
 
     const teamName = teamForm.name.trim() || `${playerA.display_name} / ${playerB.display_name}`;
+    if (divisionEntries.some((entry) => entry.division_id === selectedDoublesDivision.id && entry.label.toLowerCase() === teamName.toLowerCase())) {
+      setMessage(`${teamName} is already assigned to ${selectedDoublesDivision.name}.`);
+      return;
+    }
 
     setCreatingTeam(true);
     setMessage("");
@@ -552,21 +900,167 @@ export function AdminWorkspace() {
     setMessage(`${teamName} created and assigned to ${selectedDoublesDivision.name}.`);
   }
 
+  async function createScheduleTeam() {
+    if (!supabase || !adminUser) return;
+
+    if (!scheduleTeamForm.playerAId || !scheduleTeamForm.playerBId || scheduleTeamForm.playerAId === scheduleTeamForm.playerBId) {
+      setMessage("Choose two different players for a doubles team.");
+      return;
+    }
+
+    const playerA = players.find((player) => player.id === scheduleTeamForm.playerAId);
+    const playerB = players.find((player) => player.id === scheduleTeamForm.playerBId);
+    if (!playerA || !playerB) return;
+
+    const teamName = scheduleTeamForm.name.trim() || `${playerA.display_name} / ${playerB.display_name}`;
+    if (teams.some((team) => team.name.toLowerCase() === teamName.toLowerCase())) {
+      setMessage(`${teamName} already exists. Select it from the team list.`);
+      return;
+    }
+
+    setCreatingScheduleTeam(true);
+    setMessage("");
+    const { data: team, error: teamError } = await supabase
+      .from("teams")
+      .insert({
+        club_id: adminUser.club_id,
+        name: teamName
+      })
+      .select("id, club_id, name")
+      .single();
+
+    if (teamError || !team) {
+      setCreatingScheduleTeam(false);
+      setMessage(teamError?.message || "Could not create team.");
+      return;
+    }
+
+    const { error: membersError } = await supabase.from("team_members").insert([
+      { team_id: team.id, player_id: playerA.id },
+      { team_id: team.id, player_id: playerB.id }
+    ]);
+
+    setCreatingScheduleTeam(false);
+    if (membersError) {
+      setMessage(membersError.message);
+      return;
+    }
+
+    const createdTeam = team as TeamRow;
+    setTeams((current) => [...current, createdTeam].sort((a, b) => a.name.localeCompare(b.name)));
+    setSelectedScheduleTeamIds((current) => Array.from(new Set([...current, createdTeam.id])));
+    setScheduleTeamForm({ name: "", playerAId: "", playerBId: "" });
+    setMessage(`${teamName} created. It is selected for scheduling.`);
+  }
+
+  async function ensureScheduleEntries(division: DivisionRow) {
+    if (!supabase) return [];
+
+    const existingEntries = divisionEntries.filter((entry) => entry.division_id === division.id);
+    const selectedIds = division.format === "doubles" ? selectedScheduleTeamIds : selectedSchedulePlayerIds;
+    const missingRows: Array<{ division_id: string; label: string; player_id?: string; team_id?: string }> = [];
+
+    for (const selectedId of selectedIds) {
+      const existing = existingEntries.find((entry) => (division.format === "doubles" ? entry.team_id === selectedId : entry.player_id === selectedId));
+      if (existing) continue;
+
+      if (division.format === "doubles") {
+        const team = teams.find((item) => item.id === selectedId);
+        if (team) missingRows.push({ division_id: division.id, label: team.name, team_id: team.id });
+        continue;
+      }
+
+      const player = players.find((item) => item.id === selectedId);
+      if (player) missingRows.push({ division_id: division.id, label: player.display_name, player_id: player.id });
+    }
+
+    let createdEntries: DivisionEntryRow[] = [];
+    if (missingRows.length > 0) {
+      const { data, error } = await supabase
+        .from("division_entries")
+        .insert(missingRows)
+        .select("id, division_id, label, player_id, team_id");
+
+      if (error) {
+        setMessage(error.message);
+        return [];
+      }
+
+      createdEntries = (data || []) as DivisionEntryRow[];
+      setDivisionEntries((current) => [...current, ...createdEntries].sort((a, b) => a.label.localeCompare(b.label)));
+    }
+
+    return [...existingEntries, ...createdEntries]
+      .filter((entry) => selectedIds.includes(division.format === "doubles" ? entry.team_id || "" : entry.player_id || ""))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
   async function generateSchedule() {
     if (!supabase || !selectedTournament) return;
 
-    if (divisions.length === 0) {
-      setMessage("Create at least one division before generating a schedule.");
+    if (!selectedScheduleDivision) {
+      setMessage("Create and select a division before generating a schedule.");
+      return;
+    }
+
+    const existingMatches = matches.filter((match) => match.division_id === selectedScheduleDivision.id);
+    if (existingMatches.length > 0 && !replaceExistingSchedule) {
+      setMessage(`${selectedScheduleDivision.name} already has matches. Turn on Replace existing schedule if you want to rebuild this division.`);
+      return;
+    }
+
+    if (existingMatches.length > 0 && !canReplaceExistingSchedule) {
+      setMessage(`${selectedScheduleDivision.name} has posted results or forfeits, so its schedule cannot be replaced.`);
+      return;
+    }
+
+    if (scheduleSelectionCount < 2) {
+      setMessage(`Choose at least 2 ${selectedScheduleDivision.format === "doubles" ? "teams" : "players"} before generating.`);
       return;
     }
 
     setGeneratingSchedule(true);
     setMessage("");
     const targetScore = Number(scheduleTargetScore) || 11;
+    const entriesForDivision = await ensureScheduleEntries(selectedScheduleDivision);
+
+    if (entriesForDivision.length < 2) {
+      setGeneratingSchedule(false);
+      return;
+    }
+
+    const scheduleEntries: DivisionEntry[] = entriesForDivision.map((entry) => ({
+      id: entry.id,
+      divisionId: entry.division_id,
+      label: entry.label,
+      playerIds: []
+    }));
+
+    const generated =
+      scheduleType === "eliminator"
+        ? generateEliminatorSchedule({
+            divisionId: selectedScheduleDivision.id,
+            entries: scheduleEntries,
+            startDate: selectedTournament.start_date,
+            endDate: selectedTournament.end_date
+          })
+        : generateRoundRobinSchedule({
+            divisionId: selectedScheduleDivision.id,
+            entries: scheduleEntries,
+            startDate: selectedTournament.start_date,
+            endDate: selectedTournament.end_date
+          });
+
+    if (generated.length === 0) {
+      setGeneratingSchedule(false);
+      setMessage(`${selectedScheduleDivision.name} has no playable rounds in the tournament date range.`);
+      return;
+    }
 
     const rowsToInsert: Array<{
       division_id: string;
       round: number;
+      round_label: string | null;
       entry_a_id: string;
       entry_b_id: string;
       target_score: number;
@@ -575,74 +1069,29 @@ export function AdminWorkspace() {
       extension_week_start: string;
       extension_week_end: string;
       status: MatchStatus;
-    }> = [];
-    const skipped: string[] = [];
-
-    for (const division of divisions) {
-      if (matches.some((match) => match.division_id === division.id)) {
-        skipped.push(`${division.name} already has matches`);
-        continue;
-      }
-
-      const entriesForDivision = divisionEntries.filter((entry) => entry.division_id === division.id);
-      if (entriesForDivision.length < 2) {
-        skipped.push(`${division.name} needs at least 2 entries`);
-        continue;
-      }
-
-      const scheduleEntries: DivisionEntry[] = entriesForDivision.map((entry) => ({
-        id: entry.id,
-        divisionId: entry.division_id,
-        label: entry.label,
-        playerIds: []
-      }));
-
-      const generated = generateRoundRobinSchedule({
-        divisionId: division.id,
-        entries: scheduleEntries,
-        startDate: selectedTournament.start_date,
-        endDate: selectedTournament.end_date
-      });
-
-      if (generated.length === 0) {
-        skipped.push(`${division.name} has no playable rounds in the tournament date range`);
-        continue;
-      }
-
-      rowsToInsert.push(
-        ...generated.map((match) => ({
-          division_id: match.divisionId,
-          round: match.round,
-          entry_a_id: match.entryAId,
-          entry_b_id: match.entryBId,
-          target_score: targetScore,
-          schedule_week_start: match.scheduleWeekStart,
-          schedule_week_end: match.scheduleWeekEnd,
-          extension_week_start: match.extensionWeekStart,
-          extension_week_end: match.extensionWeekEnd,
-          status: match.status
-        }))
-      );
-    }
-
-    if (rowsToInsert.length === 0) {
-      setGeneratingSchedule(false);
-      setMessage(skipped.length > 0 ? skipped.join(". ") : "No matches were generated.");
-      return;
-    }
+    }> = generated.map((match) => ({
+      division_id: match.divisionId,
+      round: match.round,
+      round_label: match.roundLabel || null,
+      entry_a_id: match.entryAId,
+      entry_b_id: match.entryBId,
+      target_score: targetScore,
+      schedule_week_start: match.scheduleWeekStart,
+      schedule_week_end: match.scheduleWeekEnd,
+      extension_week_start: match.extensionWeekStart,
+      extension_week_end: match.extensionWeekEnd,
+      status: match.status
+    }));
 
     let insertData: MatchRow[] | null = null;
     let insertErrorMessage = "";
-    let savedTargetScore = true;
+    let savedOptionalColumns = true;
 
-    const { data, error } = await supabase
-      .from("matches")
-      .insert(rowsToInsert)
-      .select(matchSelectWithTargetScore);
+    const { data, error } = await supabase.from("matches").insert(rowsToInsert).select(matchSelectWithTargetScore);
 
     if (error && isMissingTargetScoreColumn(error)) {
-      savedTargetScore = false;
-      const rowsWithoutTargetScore = rowsToInsert.map((row) => ({
+      savedOptionalColumns = false;
+      const rowsWithoutOptionalColumns = rowsToInsert.map((row) => ({
         division_id: row.division_id,
         round: row.round,
         entry_a_id: row.entry_a_id,
@@ -653,7 +1102,7 @@ export function AdminWorkspace() {
         extension_week_end: row.extension_week_end,
         status: row.status
       }));
-      const fallback = await supabase.from("matches").insert(rowsWithoutTargetScore).select(matchSelectBasic);
+      const fallback = await supabase.from("matches").insert(rowsWithoutOptionalColumns).select(matchSelectBasic);
       insertData = ((fallback.data || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 }));
       insertErrorMessage = fallback.error?.message || "";
     } else {
@@ -663,20 +1112,38 @@ export function AdminWorkspace() {
 
     setGeneratingSchedule(false);
     if (insertErrorMessage) {
-      setMessage(insertErrorMessage);
+      setMessage(`Schedule could not be saved: ${insertErrorMessage}`);
       return;
     }
 
     const created = insertData || [];
+    let replacementNote = "";
+    if (existingMatches.length > 0 && replaceExistingSchedule) {
+      const { error: deleteError } = await supabase
+        .from("matches")
+        .delete()
+        .in(
+          "id",
+          existingMatches.map((match) => match.id)
+        );
+
+      if (deleteError) {
+        replacementNote = ` New matches were created, but old matches could not be removed: ${deleteError.message}`;
+      }
+    }
+
     setMatches((current) =>
-      [...current, ...created].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round)
+      [
+        ...current.filter((match) => !(replaceExistingSchedule && existingMatches.some((existing) => existing.id === match.id))),
+        ...created
+      ].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round)
     );
+
+    const scheduleLabel = scheduleType === "eliminator" ? generated[0]?.roundLabel || "Eliminator" : "round robin";
     setMessage(
-      savedTargetScore
-        ? `Generated ${created.length} match${created.length === 1 ? "" : "es"} to ${targetScore} points.${
-            skipped.length ? ` ${skipped.join(". ")}.` : ""
-          }`
-        : `Generated ${created.length} match${created.length === 1 ? "" : "es"} with the default 11 points. Run supabase/add-match-target-score.sql before using custom target scores.`
+      savedOptionalColumns
+        ? `Generated ${created.length} ${scheduleLabel} match${created.length === 1 ? "" : "es"} to ${targetScore} points.${replacementNote}`
+        : `Generated ${created.length} match${created.length === 1 ? "" : "es"} with default saved fields. Run supabase/add-match-target-score.sql and supabase/add-match-round-label.sql for custom points and bracket labels.`
     );
   }
 
@@ -734,22 +1201,306 @@ export function AdminWorkspace() {
               ? `${selectedTournament.sport} from ${selectedTournament.start_date} through ${selectedTournament.end_date}`
               : "Create a tournament, add divisions, approve entries, then generate the schedule."}
           </p>
-          <div className="toolbar">
-            <label className="field compact-field">
+          <div className="schedule-builder">
+            <div className="grid two">
+              <label className="field">
+                <span>Division</span>
+                <select
+                  disabled={divisions.length === 0}
+                  onChange={(event) => setSelectedScheduleDivisionId(event.target.value)}
+                  value={selectedScheduleDivisionId}
+                >
+                  {divisions.length === 0 ? <option value="">No divisions yet</option> : null}
+                  {divisions.map((division) => (
+                    <option key={division.id} value={division.id}>
+                      {division.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Schedule type</span>
+                <select onChange={(event) => setScheduleType(event.target.value as "round_robin" | "eliminator")} value={scheduleType}>
+                  <option value="round_robin">Round robin</option>
+                  <option value="eliminator">Eliminator bracket</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="field">
               <span>Game target score</span>
               <select onChange={(event) => setScheduleTargetScore(event.target.value)} value={scheduleTargetScore}>
                 <option value="11">11 points</option>
                 <option value="15">15 points</option>
               </select>
             </label>
-            <button className="button" disabled={!selectedTournament || generatingSchedule} onClick={generateSchedule} type="button">
-              <Shuffle size={18} aria-hidden />
-              {generatingSchedule ? "Generating..." : "Generate schedule"}
-            </button>
-            <button className="button secondary" disabled={!selectedTournament} onClick={publishStandings} type="button">
-              <Trophy size={18} aria-hidden />
-              Publish standings
-            </button>
+
+            {selectedScheduleDivision ? (
+              <div className="entry-picker">
+                <div className="section-title">
+                  <h3>{selectedScheduleDivision.format === "doubles" ? "Choose Teams" : "Choose Players"}</h3>
+                  <span className="pill blue">{scheduleSelectionCount} selected</span>
+                </div>
+
+                {selectedScheduleDivision.format === "doubles" ? (
+                  <>
+                    <div className="team-builder">
+                      <label className="field">
+                        <span>Team name</span>
+                        <input
+                          onChange={(event) => setScheduleTeamForm((current) => ({ ...current, name: event.target.value }))}
+                          placeholder="Optional"
+                          value={scheduleTeamForm.name}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Player 1</span>
+                        <select
+                          disabled={players.length === 0}
+                          onChange={(event) => setScheduleTeamForm((current) => ({ ...current, playerAId: event.target.value }))}
+                          value={scheduleTeamForm.playerAId}
+                        >
+                          <option value="">Select player</option>
+                          {players.map((player) => (
+                            <option key={player.id} value={player.id}>
+                              {player.display_name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Player 2</span>
+                        <select
+                          disabled={players.length === 0}
+                          onChange={(event) => setScheduleTeamForm((current) => ({ ...current, playerBId: event.target.value }))}
+                          value={scheduleTeamForm.playerBId}
+                        >
+                          <option value="">Select player</option>
+                          {players.map((player) => (
+                            <option key={player.id} value={player.id}>
+                              {player.display_name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        className="button secondary"
+                        disabled={creatingScheduleTeam || !scheduleTeamForm.playerAId || !scheduleTeamForm.playerBId}
+                        onClick={createScheduleTeam}
+                        type="button"
+                      >
+                        <UsersRound size={18} aria-hidden />
+                        {creatingScheduleTeam ? "Creating..." : "Create team"}
+                      </button>
+                    </div>
+
+                    <div className="picker-controls">
+                      <label className="field">
+                        <span>Search teams</span>
+                        <input
+                          onChange={(event) => setScheduleTeamSearch(event.target.value)}
+                          placeholder="Team name"
+                          value={scheduleTeamSearch}
+                        />
+                      </label>
+                      <label className="check-toggle">
+                        <input
+                          checked={showSelectedScheduleTeamsOnly}
+                          onChange={(event) => setShowSelectedScheduleTeamsOnly(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span>Selected only</span>
+                      </label>
+                    </div>
+                    <div className="toolbar compact-toolbar">
+                      <button
+                        className="button secondary"
+                        onClick={() =>
+                          setSelectedScheduleTeamIds((current) => Array.from(new Set([...current, ...filteredScheduleTeams.map((team) => team.id)])))
+                        }
+                        type="button"
+                      >
+                        Select visible
+                      </button>
+                      <button
+                        className="button secondary"
+                        onClick={() =>
+                          setSelectedScheduleTeamIds((current) =>
+                            current.filter((teamId) => !filteredScheduleTeams.some((team) => team.id === teamId))
+                          )
+                        }
+                        type="button"
+                      >
+                        Clear visible
+                      </button>
+                      <button className="button secondary" onClick={() => setSelectedScheduleTeamIds([])} type="button">
+                        Clear all
+                      </button>
+                    </div>
+                    <p className="subtle">
+                      Showing {filteredScheduleTeams.length} of {teams.length} teams.
+                    </p>
+                    <div className="check-list">
+                      {filteredScheduleTeams.length > 0 ? (
+                        filteredScheduleTeams.map((team) => (
+                          <label className="check-row" key={team.id}>
+                            <input
+                              checked={selectedScheduleTeamIds.includes(team.id)}
+                              onChange={(event) =>
+                                setSelectedScheduleTeamIds((current) =>
+                                  event.target.checked ? [...current, team.id] : current.filter((teamId) => teamId !== team.id)
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            <span>{team.name}</span>
+                          </label>
+                        ))
+                      ) : teams.length > 0 ? (
+                        <p className="subtle">No teams match the current filters.</p>
+                      ) : (
+                        <p className="subtle">Create fixed teams above, then select them for the schedule.</p>
+                      )}
+                    </div>
+                    {selectedScheduleTeams.length > 0 ? (
+                      <div className="selected-summary">
+                        {selectedScheduleTeams.slice(0, 12).map((team) => (
+                          <span className="pill" key={team.id}>
+                            {team.name}
+                          </span>
+                        ))}
+                        {selectedScheduleTeams.length > 12 ? <span className="subtle">+{selectedScheduleTeams.length - 12} more</span> : null}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div className="picker-controls">
+                      <label className="field">
+                        <span>Search players</span>
+                        <input
+                          onChange={(event) => setSchedulePlayerSearch(event.target.value)}
+                          placeholder="Name or rating"
+                          value={schedulePlayerSearch}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Level</span>
+                        <select onChange={(event) => setScheduleRatingFilter(event.target.value)} value={scheduleRatingFilter}>
+                          <option value="all">All levels</option>
+                          {ratingOptions.map((rating) => (
+                            <option key={rating} value={rating}>
+                              {rating}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="check-toggle">
+                        <input
+                          checked={showSelectedSchedulePlayersOnly}
+                          onChange={(event) => setShowSelectedSchedulePlayersOnly(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span>Selected only</span>
+                      </label>
+                    </div>
+                    <div className="toolbar compact-toolbar">
+                      <button
+                        className="button secondary"
+                        onClick={() =>
+                          setSelectedSchedulePlayerIds((current) =>
+                            Array.from(new Set([...current, ...filteredSchedulePlayers.map((player) => player.id)]))
+                          )
+                        }
+                        type="button"
+                      >
+                        Select visible
+                      </button>
+                      <button
+                        className="button secondary"
+                        onClick={() =>
+                          setSelectedSchedulePlayerIds((current) =>
+                            current.filter((playerId) => !filteredSchedulePlayers.some((player) => player.id === playerId))
+                          )
+                        }
+                        type="button"
+                      >
+                        Clear visible
+                      </button>
+                      <button className="button secondary" onClick={() => setSelectedSchedulePlayerIds([])} type="button">
+                        Clear all
+                      </button>
+                    </div>
+                    <p className="subtle">
+                      Showing {filteredSchedulePlayers.length} of {players.length} players.
+                    </p>
+                    <div className="check-list">
+                      {filteredSchedulePlayers.length > 0 ? (
+                        filteredSchedulePlayers.map((player) => (
+                          <label className="check-row" key={player.id}>
+                            <input
+                              checked={selectedSchedulePlayerIds.includes(player.id)}
+                              onChange={(event) =>
+                                setSelectedSchedulePlayerIds((current) =>
+                                  event.target.checked ? [...current, player.id] : current.filter((playerId) => playerId !== player.id)
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            <span>{player.display_name}</span>
+                            <small>{player.rating || "No rating"}</small>
+                          </label>
+                        ))
+                      ) : players.length > 0 ? (
+                        <p className="subtle">No players match the current filters.</p>
+                      ) : (
+                        <p className="subtle">Add players in People, then select them for the schedule.</p>
+                      )}
+                    </div>
+                    {selectedSchedulePlayers.length > 0 ? (
+                      <div className="selected-summary">
+                        {selectedSchedulePlayers.slice(0, 12).map((player) => (
+                          <span className="pill" key={player.id}>
+                            {player.display_name}
+                          </span>
+                        ))}
+                        {selectedSchedulePlayers.length > 12 ? <span className="subtle">+{selectedSchedulePlayers.length - 12} more</span> : null}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {selectedScheduleDivision && selectedScheduleDivisionMatches.length > 0 ? (
+              <div className="replace-schedule">
+                <label className="check-toggle">
+                  <input
+                    checked={replaceExistingSchedule}
+                    disabled={!canReplaceExistingSchedule}
+                    onChange={(event) => setReplaceExistingSchedule(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>Replace existing schedule for this division</span>
+                </label>
+                <p className="subtle">
+                  {canReplaceExistingSchedule
+                    ? `${selectedScheduleDivisionMatches.length} existing scheduled/cancelled match${selectedScheduleDivisionMatches.length === 1 ? "" : "es"} can be rebuilt.`
+                    : "This division has posted results or forfeits, so create a new division instead of replacing it."}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="toolbar">
+              <button className="button" disabled={!selectedTournament || generatingSchedule} onClick={generateSchedule} type="button">
+                <Shuffle size={18} aria-hidden />
+                {generatingSchedule ? "Generating..." : "Generate schedule"}
+              </button>
+              <button className="button secondary" disabled={!selectedTournament} onClick={publishStandings} type="button">
+                <Trophy size={18} aria-hidden />
+                Publish standings
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -915,175 +1666,175 @@ export function AdminWorkspace() {
 
       <section className="card" style={{ marginTop: 14 }}>
         <div className="section-title">
-          <h2>Players</h2>
-          <UsersRound size={22} aria-hidden />
+          <h2>People</h2>
+          <UserPlus size={22} aria-hidden />
         </div>
         <div className="admin-columns">
-          <form className="form-grid" onSubmit={addPlayer}>
-            <h3>Add Player</h3>
+          <form className="form-grid" onSubmit={inviteUser}>
+            <h3>Add User And Player</h3>
             <label className="field">
-              <span>Player name</span>
+              <span>Full name</span>
               <input
-                onChange={(event) => setPlayerForm((current) => ({ ...current, displayName: event.target.value }))}
+                onChange={(event) => setInviteForm((current) => ({ ...current, fullName: event.target.value }))}
                 placeholder="Full name"
                 required
-                value={playerForm.displayName}
+                value={inviteForm.fullName}
               />
+            </label>
+            <label className="field">
+              <span>Email</span>
+              <input
+                autoComplete="email"
+                inputMode="email"
+                onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                placeholder="name@email.com"
+                required
+                value={inviteForm.email}
+              />
+            </label>
+            <label className="field">
+              <span>Temporary password</span>
+              <input
+                autoComplete="new-password"
+                minLength={6}
+                onChange={(event) => setInviteForm((current) => ({ ...current, password: event.target.value }))}
+                placeholder="At least 6 characters"
+                type="password"
+                value={inviteForm.password}
+              />
+            </label>
+            <label className="field">
+              <span>Role</span>
+              <select
+                onChange={(event) =>
+                  setInviteForm((current) => ({
+                    ...current,
+                    role: event.target.value as "admin" | "player",
+                    playerProfileMode: event.target.value === "player" ? current.playerProfileMode || "__new" : ""
+                  }))
+                }
+                value={inviteForm.role}
+              >
+                <option value="player">Player</option>
+                <option value="admin">Admin</option>
+              </select>
             </label>
             <label className="field">
               <span>Rating</span>
               <input
-                onChange={(event) => setPlayerForm((current) => ({ ...current, rating: event.target.value }))}
+                disabled={inviteForm.role !== "player"}
+                onChange={(event) => setInviteForm((current) => ({ ...current, rating: event.target.value }))}
                 placeholder="3.5"
-                value={playerForm.rating}
+                value={inviteForm.rating}
               />
             </label>
-            <button className="button" disabled={savingPlayer || !adminUser} type="submit">
-              <Plus size={18} aria-hidden />
-              {savingPlayer ? "Adding..." : "Add player"}
+            <label className="field">
+              <span>Player profile</span>
+              <select
+                disabled={inviteForm.role !== "player"}
+                onChange={(event) => setInviteForm((current) => ({ ...current, playerProfileMode: event.target.value }))}
+                value={inviteForm.playerProfileMode}
+              >
+                <option value="__new">Create new player profile</option>
+                <option value="">No player profile</option>
+                {players.map((player) => (
+                  <option key={player.id} value={player.id}>
+                    {player.display_name}{player.user_id ? " (already linked)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="button" disabled={invitingUser || !adminUser} type="submit">
+              <UserPlus size={18} aria-hidden />
+              {invitingUser ? "Creating..." : inviteForm.password ? "Create login" : "Send invite"}
+            </button>
+            <p className="subtle">Leave password blank to send an email invite. Creating logins requires SUPABASE_SERVICE_ROLE_KEY in .env.local.</p>
+          </form>
+
+          <div className="form-grid">
+            <h3>Upload People</h3>
+            <p className="subtle">Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, role, password, rating.</p>
+            <label className="file-drop">
+              <Upload size={22} aria-hidden />
+              <span>{importingPlayers ? "Importing..." : "Choose people file"}</span>
+              <input
+                accept=".csv,.tsv,.txt,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                disabled={importingPlayers || !adminUser}
+                onChange={importPeople}
+                type="file"
+              />
+            </label>
+          </div>
+
+          <form className="form-grid" onSubmit={linkUserToPlayer}>
+            <h3>Link Existing Login</h3>
+            <label className="field">
+              <span>User login</span>
+              <select onChange={(event) => setLinkForm((current) => ({ ...current, userId: event.target.value }))} value={linkForm.userId}>
+                <option value="">Select user</option>
+                {appUsers
+                  .filter((user) => user.role === "player")
+                  .map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name} ({user.email})
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Player profile</span>
+              <select
+                onChange={(event) => setLinkForm((current) => ({ ...current, playerProfileId: event.target.value }))}
+                value={linkForm.playerProfileId}
+              >
+                <option value="">Select player</option>
+                {players.map((player) => (
+                  <option key={player.id} value={player.id}>
+                    {player.display_name}{player.user_id ? " (linked)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="button" disabled={linkingUser || !linkForm.userId || !linkForm.playerProfileId} type="submit">
+              <Check size={18} aria-hidden />
+              {linkingUser ? "Linking..." : "Link profile"}
             </button>
           </form>
 
           <div className="form-grid">
-            <h3>CSV Import</h3>
-            <p className="subtle">Upload a CSV with columns named name or display_name, plus optional rating.</p>
-            <label className="file-drop">
-              <Upload size={22} aria-hidden />
-              <span>{importingPlayers ? "Importing..." : "Choose CSV file"}</span>
-              <input accept=".csv,text/csv" disabled={importingPlayers || !adminUser} onChange={importPlayers} type="file" />
-            </label>
-          </div>
-
-          <div className="form-grid">
-            <h3>Player List</h3>
-            {players.length > 0 ? (
+            <h3>User Access</h3>
+            {appUsers.length > 0 ? (
               <div className="compact-list">
-                {players.slice(0, 8).map((player) => (
-                  <div className="compact-row" key={player.id}>
-                    <strong>{player.display_name}</strong>
-                    <span className="subtle">{player.rating || "No rating"}</span>
-                  </div>
-                ))}
-                {players.length > 8 ? <p className="subtle">Showing 8 of {players.length} players</p> : null}
+                {appUsers.map((user) => {
+                  const linkedPlayer = players.find((player) => player.user_id === user.id);
+                  return (
+                    <div className="compact-row user-row" key={user.id}>
+                      <div>
+                        <strong>{user.full_name}</strong>
+                        <p className="subtle">{user.email}</p>
+                        <p className="subtle">{linkedPlayer ? `Player: ${linkedPlayer.display_name}` : "No linked player profile"}</p>
+                      </div>
+                      <select
+                        aria-label={`Role for ${user.full_name}`}
+                        disabled={updatingUserId === user.id}
+                        onChange={(event) => updateUserRole(user.id, event.target.value as "admin" | "player")}
+                        value={user.role}
+                      >
+                        <option value="player">Player</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <button className="button secondary" disabled={updatingUserId === user.id} onClick={() => toggleUserAccess(user)} type="button">
+                        {user.access_disabled ? "Enable" : "Disable"}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <EmptyState icon={<UsersRound size={24} aria-hidden />} title="No players yet" body="Add players manually or import a CSV." />
+              <EmptyState icon={<UserPlus size={24} aria-hidden />} title="No app users" body="Create login invites or add users in Supabase Auth, then assign app access here." />
             )}
           </div>
         </div>
-      </section>
-
-      <section className="grid two" style={{ marginTop: 14 }}>
-        <form className="card form-grid" onSubmit={assignSinglesPlayer}>
-          <div className="section-title">
-            <h2>Assign Singles Player</h2>
-            <Check size={22} aria-hidden />
-          </div>
-          <label className="field">
-            <span>Singles division</span>
-            <select
-              disabled={singlesDivisions.length === 0}
-              onChange={(event) => setSelectedSinglesDivisionId(event.target.value)}
-              value={selectedSinglesDivisionId}
-            >
-              {singlesDivisions.length === 0 ? <option value="">No singles divisions</option> : null}
-              {singlesDivisions.map((division) => (
-                <option key={division.id} value={division.id}>
-                  {division.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Player</span>
-            <select
-              disabled={players.length === 0}
-              onChange={(event) => setAssignmentForm({ playerId: event.target.value })}
-              value={assignmentForm.playerId}
-            >
-              <option value="">Select player</option>
-              {players.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="button" disabled={assigningEntry || !assignmentForm.playerId || singlesDivisions.length === 0} type="submit">
-            <Check size={18} aria-hidden />
-            {assigningEntry ? "Assigning..." : "Assign to division"}
-          </button>
-        </form>
-
-        <form className="card form-grid" onSubmit={createDoublesTeam}>
-          <div className="section-title">
-            <h2>Create Fixed Doubles Team</h2>
-            <UsersRound size={22} aria-hidden />
-          </div>
-          <label className="field">
-            <span>Doubles division</span>
-            <select
-              disabled={doublesDivisions.length === 0}
-              onChange={(event) => setSelectedDoublesDivisionId(event.target.value)}
-              value={selectedDoublesDivisionId}
-            >
-              {doublesDivisions.length === 0 ? <option value="">No doubles divisions</option> : null}
-              {doublesDivisions.map((division) => (
-                <option key={division.id} value={division.id}>
-                  {division.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Team name</span>
-            <input
-              onChange={(event) => setTeamForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Optional"
-              value={teamForm.name}
-            />
-          </label>
-          <div className="grid two">
-            <label className="field">
-              <span>Player 1</span>
-              <select
-                disabled={players.length === 0}
-                onChange={(event) => setTeamForm((current) => ({ ...current, playerAId: event.target.value }))}
-                value={teamForm.playerAId}
-              >
-                <option value="">Select player</option>
-                {players.map((player) => (
-                  <option key={player.id} value={player.id}>
-                    {player.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Player 2</span>
-              <select
-                disabled={players.length === 0}
-                onChange={(event) => setTeamForm((current) => ({ ...current, playerBId: event.target.value }))}
-                value={teamForm.playerBId}
-              >
-                <option value="">Select player</option>
-                {players.map((player) => (
-                  <option key={player.id} value={player.id}>
-                    {player.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <button
-            className="button"
-            disabled={creatingTeam || !teamForm.playerAId || !teamForm.playerBId || doublesDivisions.length === 0}
-            type="submit"
-          >
-            <UsersRound size={18} aria-hidden />
-            {creatingTeam ? "Creating..." : "Create team"}
-          </button>
-        </form>
       </section>
 
       <section className="card" style={{ marginTop: 14 }}>
@@ -1102,7 +1853,7 @@ export function AdminWorkspace() {
                 <article className="match-card" key={match.id}>
                   <div className="match-meta">
                     <span className="pill blue">{division?.name || "Division"}</span>
-                    <span className="pill">Round {match.round}</span>
+                    <span className="pill">{match.round_label || `Round ${match.round}`}</span>
                     <span className="pill">To {match.target_score || 11}</span>
                   </div>
                   <div className="versus">
@@ -1162,6 +1913,73 @@ function parsePlayerCsv(text: string, clubId: string) {
     .filter((row): row is { club_id: string; display_name: string; rating: string | null } => Boolean(row));
 }
 
+async function parsePeopleImportFile(file: File): Promise<PeopleImportRow[]> {
+  const fileName = file.name.toLowerCase();
+  if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) return [];
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    return rawRows.map(normalizePeopleImportRow).filter((row): row is PeopleImportRow => Boolean(row));
+  }
+
+  const text = await file.text();
+  const delimiter = fileName.endsWith(".tsv") ? "\t" : ",";
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const headers = splitDelimitedLine(lines[0], delimiter).map(normalizeHeader);
+  return lines
+    .slice(1)
+    .map((line) => {
+      const cells = splitDelimitedLine(line, delimiter);
+      const rawRow = Object.fromEntries(headers.map((header, index) => [header, cells[index] || ""]));
+      return normalizePeopleImportRow(rawRow);
+    })
+    .filter((row): row is PeopleImportRow => Boolean(row));
+}
+
+function normalizePeopleImportRow(rawRow: Record<string, unknown>): PeopleImportRow | undefined {
+  const row = Object.fromEntries(Object.entries(rawRow).map(([key, value]) => [normalizeHeader(key), String(value || "").trim()]));
+  const fullName = pickValue(row, ["full_name", "name", "display_name", "player_name"]);
+  const email = pickValue(row, ["email", "email_address", "login_email"]).toLowerCase();
+  if (!fullName || !email) return undefined;
+
+  const rawRole = pickValue(row, ["role", "user_role"]).toLowerCase();
+  const role: "admin" | "player" = rawRole === "admin" ? "admin" : "player";
+  const createPlayerRaw = pickValue(row, ["create_player_profile", "create_player", "player", "is_player"]).toLowerCase();
+  const createPlayerProfile = role === "player" && !["false", "no", "0", "n"].includes(createPlayerRaw);
+
+  return {
+    fullName,
+    email,
+    password: pickValue(row, ["password", "temporary_password", "temp_password"]) || undefined,
+    role,
+    rating: pickValue(row, ["rating", "skill_level", "level"]) || undefined,
+    createPlayerProfile
+  };
+}
+
+function normalizeHeader(header: string) {
+  return header.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function pickValue(row: Record<string, string>, keys: string[]) {
+  for (const key of keys) {
+    if (row[key]) return row[key];
+  }
+  return "";
+}
+
+function splitDelimitedLine(line: string, delimiter: string) {
+  if (delimiter === "\t") return line.split("\t");
+  return parseCsvLine(line);
+}
+
 function parseCsvLine(line: string) {
   const cells: string[] = [];
   let current = "";
@@ -1190,6 +2008,11 @@ function parseCsvLine(line: string) {
 
   cells.push(current);
   return cells;
+}
+
+function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("access_disabled") || message.includes("schema cache");
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, timeout: string): Promise<T | { timeout: string }> {

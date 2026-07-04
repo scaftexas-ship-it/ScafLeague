@@ -18,6 +18,7 @@ create table public.users (
   role public.user_role not null default 'player',
   full_name text not null,
   email text not null,
+  access_disabled boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -87,6 +88,7 @@ create table public.matches (
   id uuid primary key default gen_random_uuid(),
   division_id uuid not null references public.divisions(id) on delete cascade,
   round integer not null check (round > 0),
+  round_label text,
   entry_a_id uuid not null references public.division_entries(id) on delete cascade,
   entry_b_id uuid not null references public.division_entries(id) on delete cascade,
   target_score integer not null default 11 check (target_score > 0),
@@ -178,7 +180,7 @@ security definer
 set search_path = public
 stable
 as $$
-  select exists(select 1 from public.users where id = auth.uid() and role = 'admin');
+  select exists(select 1 from public.users where id = auth.uid() and role = 'admin' and access_disabled = false);
 $$;
 
 create function public.is_entry_member(entry uuid)
