@@ -41,6 +41,9 @@ type MatchRow = {
   extension_week_end: string;
   status: MatchStatus;
   target_score?: number | null;
+  number_of_sets?: number | null;
+  restrict_score_updates?: boolean | null;
+  allow_forfeit?: boolean | null;
 };
 
 type StandingRow = {
@@ -179,7 +182,15 @@ export function HomeDashboard() {
       }
 
       setEntries((entryRows || []) as DivisionEntryRow[]);
-      setMatches(((fallbackMatches || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 })));
+      setMatches(
+        ((fallbackMatches || []) as MatchRow[]).map((match) => ({
+          ...match,
+          target_score: 11,
+          number_of_sets: 3,
+          restrict_score_updates: false,
+          allow_forfeit: true
+        }))
+      );
       setStandings(((standingRows || []) as StandingRow[]).sort((a, b) => b.points - a.points || b.wins - a.wins));
       setMessage("Dashboard loaded.");
       return;

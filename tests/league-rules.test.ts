@@ -108,6 +108,7 @@ test("forfeit can only be claimed during scheduled week by a match entry", () =>
   });
 
   assert.equal(canClaimForfeit(match, match.entryAId, "2026-07-06"), true);
+  assert.equal(canClaimForfeit({ ...match, allowForfeit: false }, match.entryAId, "2026-07-06"), false);
   assert.equal(canClaimForfeit(match, "other", "2026-07-06"), false);
   assert.equal(canClaimForfeit(match, match.entryAId, "2026-07-14"), false);
   assert.equal(canClaimForfeit({ ...match, status: "completed" }, match.entryAId, "2026-07-06"), false);

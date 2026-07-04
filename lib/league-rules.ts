@@ -14,6 +14,7 @@ export function isWithinInclusive(date: string, start: string, end: string) {
 }
 
 export function canClaimForfeit(match: Match, entryId: string, today = new Date().toISOString().slice(0, 10)) {
+  if (match.allowForfeit === false) return false;
   if (match.status !== "scheduled" && match.status !== "score_submitted") return false;
   if (match.entryAId !== entryId && match.entryBId !== entryId) return false;
   return isWithinInclusive(today, match.scheduleWeekStart, match.scheduleWeekEnd);

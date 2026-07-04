@@ -1,0 +1,4 @@
+full_name,email,role,password,rating,create_player_profile
+Sample Player One,player1@example.com,player,temporary123,3.5,true
+Sample Player Two,player2@example.com,player,temporary123,4.0,true
+Sample Admin,admin@example.com,admin,temporary123,,false

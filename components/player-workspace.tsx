@@ -53,6 +53,9 @@ type MatchRow = {
   extension_week_end: string;
   status: MatchStatus;
   target_score?: number | null;
+  number_of_sets?: number | null;
+  restrict_score_updates?: boolean | null;
+  allow_forfeit?: boolean | null;
 };
 
 export function PlayerWorkspace() {
@@ -287,7 +290,13 @@ export function PlayerWorkspace() {
         return;
       }
 
-      const allMatches = ((fallbackMatches || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 }));
+      const allMatches = ((fallbackMatches || []) as MatchRow[]).map((match) => ({
+        ...match,
+        target_score: 11,
+        number_of_sets: 3,
+        restrict_score_updates: false,
+        allow_forfeit: true
+      }));
       const visibleMatches =
         entryIds.length > 0 ? allMatches.filter((match) => entryIds.includes(match.entry_a_id) || entryIds.includes(match.entry_b_id)) : allMatches;
 
@@ -348,7 +357,16 @@ export function PlayerWorkspace() {
 
     setMatches((current) =>
       current.map((item) =>
-        item.id === match.id ? ({ ...(data as MatchRow), round_label: match.round_label, target_score: match.target_score || 11 } as MatchRow) : item
+        item.id === match.id
+          ? ({
+              ...(data as MatchRow),
+              round_label: match.round_label,
+              target_score: match.target_score || 11,
+              number_of_sets: match.number_of_sets || 3,
+              restrict_score_updates: match.restrict_score_updates || false,
+              allow_forfeit: match.allow_forfeit !== false
+            } as MatchRow)
+          : item
       )
     );
     setMessage("Score submitted.");
@@ -388,7 +406,16 @@ export function PlayerWorkspace() {
 
     setMatches((current) =>
       current.map((item) =>
-        item.id === match.id ? ({ ...(data as MatchRow), round_label: match.round_label, target_score: match.target_score || 11 } as MatchRow) : item
+        item.id === match.id
+          ? ({
+              ...(data as MatchRow),
+              round_label: match.round_label,
+              target_score: match.target_score || 11,
+              number_of_sets: match.number_of_sets || 3,
+              restrict_score_updates: match.restrict_score_updates || false,
+              allow_forfeit: match.allow_forfeit !== false
+            } as MatchRow)
+          : item
       )
     );
     setMessage("Forfeit recorded.");
@@ -526,7 +553,7 @@ function MatchCard({
   const canForfeit = Boolean(playerEntryId && canClaimForfeit(forfeitMatch, playerEntryId));
   const canForfeitForEntryA = isAdminPreview && canClaimForfeit(forfeitMatch, match.entry_a_id);
   const canForfeitForEntryB = isAdminPreview && canClaimForfeit(forfeitMatch, match.entry_b_id);
-  const canEdit = canAct && (match.status === "scheduled" || match.status === "score_submitted");
+  const canEdit = canAct && (!match.restrict_score_updates || isAdminPreview) && (match.status === "scheduled" || match.status === "score_submitted");
   const forfeitReason = getForfeitUnavailableReason(match);
 
   async function handleScoreSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -641,6 +668,9 @@ function getForfeitUnavailableReason(match: MatchRow) {
   if (match.status === "cancelled") {
     return "Forfeit is locked because this match is cancelled.";
   }
+  if (match.allow_forfeit === false) {
+    return "Forfeit is disabled for this schedule.";
+  }
   const today = new Date().toISOString().slice(0, 10);
   if (today < match.schedule_week_start) return "Forfeit opens during the schedule week.";
   if (today > match.schedule_week_end) return "Forfeit is not allowed after the schedule week.";
@@ -744,6 +774,9 @@ function toDomainMatch(match: MatchRow): Match {
     entryAId: match.entry_a_id,
     entryBId: match.entry_b_id,
     targetScore: match.target_score || 11,
+    numberOfSets: match.number_of_sets || 3,
+    restrictScoreUpdates: match.restrict_score_updates || false,
+    allowForfeit: match.allow_forfeit !== false,
     scheduleWeekStart: match.schedule_week_start,
     scheduleWeekEnd: match.schedule_week_end,
     extensionWeekStart: match.extension_week_start,

@@ -55,6 +55,9 @@ export type Match = {
   entryAId: string;
   entryBId: string;
   targetScore?: number;
+  numberOfSets?: number;
+  restrictScoreUpdates?: boolean;
+  allowForfeit?: boolean;
   scheduleWeekStart: string;
   scheduleWeekEnd: string;
   extensionWeekStart: string;

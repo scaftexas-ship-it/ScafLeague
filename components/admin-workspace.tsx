@@ -3,8 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarPlus, Check, ListChecks, Plus, Shuffle, Trophy, Upload, UserPlus, UsersRound } from "lucide-react";
-import { generateEliminatorSchedule, generateRoundRobinSchedule } from "@/lib/league-rules";
+import { CalendarPlus, Check, Plus, Shuffle, Trophy, Upload, UserPlus, UsersRound } from "lucide-react";
+import { addDays, generateEliminatorSchedule, generateRoundRobinSchedule } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { DivisionEntry, DivisionFormat, MatchStatus, Sport } from "@/lib/types";
@@ -87,6 +87,15 @@ type MatchRow = {
   extension_week_end: string;
   status: MatchStatus;
   target_score?: number | null;
+  number_of_sets?: number | null;
+  restrict_score_updates?: boolean | null;
+  allow_forfeit?: boolean | null;
+};
+
+type ManualMatchRow = {
+  id: string;
+  entryASelectionId: string;
+  entryBSelectionId: string;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -106,9 +115,20 @@ export function AdminWorkspace() {
   const [selectedSinglesDivisionId, setSelectedSinglesDivisionId] = useState("");
   const [selectedDoublesDivisionId, setSelectedDoublesDivisionId] = useState("");
   const [selectedScheduleDivisionId, setSelectedScheduleDivisionId] = useState("");
-  const [scheduleType, setScheduleType] = useState<"round_robin" | "eliminator">("round_robin");
+  const [scheduleName, setScheduleName] = useState("Division X");
+  const [scheduleSkillLevel, setScheduleSkillLevel] = useState("3.5");
+  const [scheduleFormat, setScheduleFormat] = useState<DivisionFormat>("singles");
+  const [scheduleType, setScheduleType] = useState<"round_robin" | "eliminator" | "manual">("round_robin");
+  const [scheduleStep, setScheduleStep] = useState<"setup" | "entries">("setup");
+  const [scheduleNumberOfSets, setScheduleNumberOfSets] = useState("3");
+  const [scheduleDateType, setScheduleDateType] = useState("play_by");
+  const [scheduleStartDate, setScheduleStartDate] = useState(today);
+  const [restrictScoreUpdates, setRestrictScoreUpdates] = useState(false);
+  const [allowGameForfeit, setAllowGameForfeit] = useState(true);
+  const [changeWinningScore, setChangeWinningScore] = useState(false);
   const [selectedSchedulePlayerIds, setSelectedSchedulePlayerIds] = useState<string[]>([]);
   const [selectedScheduleTeamIds, setSelectedScheduleTeamIds] = useState<string[]>([]);
+  const [manualMatches, setManualMatches] = useState<ManualMatchRow[]>([{ id: "manual-1", entryASelectionId: "", entryBSelectionId: "" }]);
   const [schedulePlayerSearch, setSchedulePlayerSearch] = useState("");
   const [scheduleRatingFilter, setScheduleRatingFilter] = useState("all");
   const [showSelectedSchedulePlayersOnly, setShowSelectedSchedulePlayersOnly] = useState(false);
@@ -177,7 +197,9 @@ export function AdminWorkspace() {
   const selectedScheduleDivision = divisions.find((division) => division.id === selectedScheduleDivisionId);
   const selectedScheduleDivisionMatches = matches.filter((match) => match.division_id === selectedScheduleDivisionId);
   const canReplaceExistingSchedule = selectedScheduleDivisionMatches.every((match) => match.status === "scheduled" || match.status === "cancelled");
-  const scheduleSelectionCount = selectedScheduleDivision?.format === "doubles" ? selectedScheduleTeamIds.length : selectedSchedulePlayerIds.length;
+  const activeScheduleFormat = selectedScheduleDivision?.format || scheduleFormat;
+  const activeScheduleName = selectedScheduleDivision?.name || scheduleName.trim() || "Division X";
+  const scheduleSelectionCount = activeScheduleFormat === "doubles" ? selectedScheduleTeamIds.length : selectedSchedulePlayerIds.length;
   const ratingOptions = Array.from(new Set(players.map((player) => player.rating?.trim() || "No rating"))).sort((a, b) => a.localeCompare(b));
   const filteredSchedulePlayers = players.filter((player) => {
     const playerRating = player.rating?.trim() || "No rating";
@@ -196,6 +218,10 @@ export function AdminWorkspace() {
   });
   const selectedSchedulePlayers = players.filter((player) => selectedSchedulePlayerIds.includes(player.id));
   const selectedScheduleTeams = teams.filter((team) => selectedScheduleTeamIds.includes(team.id));
+  const manualEntryOptions =
+    activeScheduleFormat === "doubles"
+      ? selectedScheduleTeams.map((team) => ({ id: team.id, label: team.name }))
+      : selectedSchedulePlayers.map((player) => ({ id: player.id, label: player.display_name }));
   const divisionName = `${divisionForm.skillLevel.trim()} ${divisionForm.format === "singles" ? "Singles" : "Doubles"}`;
 
   useEffect(() => {
@@ -215,13 +241,19 @@ export function AdminWorkspace() {
   }, [selectedTournamentId]);
 
   useEffect(() => {
+    if (selectedTournament) {
+      setScheduleStartDate(selectedTournament.start_date);
+    }
+  }, [selectedTournament]);
+
+  useEffect(() => {
     if (divisions.length === 0) {
       setSelectedSinglesDivisionId("");
       setSelectedDoublesDivisionId("");
       setSelectedScheduleDivisionId("");
       return;
     }
-    setSelectedScheduleDivisionId((current) => (current && divisions.some((division) => division.id === current) ? current : divisions[0]?.id || ""));
+    setSelectedScheduleDivisionId((current) => (current && divisions.some((division) => division.id === current) ? current : ""));
     setSelectedSinglesDivisionId((current) =>
       current && divisions.some((division) => division.id === current && division.format === "singles")
         ? current
@@ -233,6 +265,13 @@ export function AdminWorkspace() {
         : divisions.find((division) => division.format === "doubles")?.id || ""
     );
   }, [divisions]);
+
+  useEffect(() => {
+    if (!selectedScheduleDivision) return;
+    setScheduleName(selectedScheduleDivision.name);
+    setScheduleSkillLevel(selectedScheduleDivision.skill_level);
+    setScheduleFormat(selectedScheduleDivision.format);
+  }, [selectedScheduleDivision]);
 
   useEffect(() => {
     if (!selectedScheduleDivision) {
@@ -257,6 +296,8 @@ export function AdminWorkspace() {
     setScheduleTeamSearch("");
     setShowSelectedScheduleTeamsOnly(false);
     setReplaceExistingSchedule(false);
+    setScheduleStep("setup");
+    setManualMatches([{ id: "manual-1", entryASelectionId: "", entryBSelectionId: "" }]);
   }, [selectedScheduleDivisionId]);
 
   async function loadAdminData() {
@@ -498,7 +539,13 @@ export function AdminWorkspace() {
         return [];
       }
 
-      const fallbackRows = ((fallbackData || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 }));
+      const fallbackRows = ((fallbackData || []) as MatchRow[]).map((match) => ({
+        ...match,
+        target_score: 11,
+        number_of_sets: 3,
+        restrict_score_updates: false,
+        allow_forfeit: true
+      }));
       setMatches(fallbackRows);
       return fallbackRows;
     }
@@ -953,6 +1000,35 @@ export function AdminWorkspace() {
     setMessage(`${teamName} created. It is selected for scheduling.`);
   }
 
+  async function ensureScheduleDivision() {
+    if (!supabase || !selectedTournamentId) return undefined;
+    if (selectedScheduleDivision) return selectedScheduleDivision;
+
+    const skillLevel = scheduleSkillLevel.trim() || "All Levels";
+    const name = scheduleName.trim() || `${skillLevel} ${scheduleFormat === "singles" ? "Singles" : "Doubles"}`;
+    setMessage("");
+    const { data, error } = await supabase
+      .from("divisions")
+      .insert({
+        tournament_id: selectedTournamentId,
+        name,
+        skill_level: skillLevel,
+        format: scheduleFormat
+      })
+      .select("id, tournament_id, name, skill_level, format")
+      .single();
+
+    if (error) {
+      setMessage(error.message);
+      return undefined;
+    }
+
+    const created = data as DivisionRow;
+    setDivisions((current) => [created, ...current]);
+    setSelectedScheduleDivisionId(created.id);
+    return created;
+  }
+
   async function ensureScheduleEntries(division: DivisionRow) {
     if (!supabase) return [];
 
@@ -998,31 +1074,51 @@ export function AdminWorkspace() {
   async function generateSchedule() {
     if (!supabase || !selectedTournament) return;
 
-    if (!selectedScheduleDivision) {
-      setMessage("Create and select a division before generating a schedule.");
-      return;
-    }
-
-    const existingMatches = matches.filter((match) => match.division_id === selectedScheduleDivision.id);
-    if (existingMatches.length > 0 && !replaceExistingSchedule) {
-      setMessage(`${selectedScheduleDivision.name} already has matches. Turn on Replace existing schedule if you want to rebuild this division.`);
-      return;
-    }
-
-    if (existingMatches.length > 0 && !canReplaceExistingSchedule) {
-      setMessage(`${selectedScheduleDivision.name} has posted results or forfeits, so its schedule cannot be replaced.`);
+    if (!scheduleName.trim()) {
+      setMessage("Enter a schedule name before continuing.");
       return;
     }
 
     if (scheduleSelectionCount < 2) {
-      setMessage(`Choose at least 2 ${selectedScheduleDivision.format === "doubles" ? "teams" : "players"} before generating.`);
+      setMessage(`Choose at least 2 ${activeScheduleFormat === "doubles" ? "teams" : "players"} before generating.`);
       return;
+    }
+
+    if (scheduleType === "manual") {
+      const usableManualMatches = manualMatches.filter((match) => match.entryASelectionId && match.entryBSelectionId);
+      if (usableManualMatches.length === 0) {
+        setMessage("Add at least one manual matchup before generating.");
+        return;
+      }
+      if (usableManualMatches.some((match) => match.entryASelectionId === match.entryBSelectionId)) {
+        setMessage("Manual matchups need two different players or teams.");
+        return;
+      }
     }
 
     setGeneratingSchedule(true);
     setMessage("");
-    const targetScore = Number(scheduleTargetScore) || 11;
-    const entriesForDivision = await ensureScheduleEntries(selectedScheduleDivision);
+    const scheduleDivision = await ensureScheduleDivision();
+    if (!scheduleDivision) {
+      setGeneratingSchedule(false);
+      return;
+    }
+
+    const existingMatches = matches.filter((match) => match.division_id === scheduleDivision.id);
+    if (existingMatches.length > 0 && !replaceExistingSchedule) {
+      setGeneratingSchedule(false);
+      setMessage(`${scheduleDivision.name} already has matches. Turn on Replace existing schedule if you want to rebuild this schedule.`);
+      return;
+    }
+
+    if (existingMatches.length > 0 && !canReplaceExistingSchedule) {
+      setGeneratingSchedule(false);
+      setMessage(`${scheduleDivision.name} has posted results or forfeits, so its schedule cannot be replaced.`);
+      return;
+    }
+
+    const targetScore = changeWinningScore ? Number(scheduleTargetScore) || 11 : 11;
+    const entriesForDivision = await ensureScheduleEntries(scheduleDivision);
 
     if (entriesForDivision.length < 2) {
       setGeneratingSchedule(false);
@@ -1037,23 +1133,52 @@ export function AdminWorkspace() {
     }));
 
     const generated =
-      scheduleType === "eliminator"
+      scheduleType === "manual"
+        ? manualMatches
+            .filter((match) => match.entryASelectionId && match.entryBSelectionId && match.entryASelectionId !== match.entryBSelectionId)
+            .flatMap((manualMatch, index) => {
+              const entryA = entriesForDivision.find((entry) =>
+                activeScheduleFormat === "doubles" ? entry.team_id === manualMatch.entryASelectionId : entry.player_id === manualMatch.entryASelectionId
+              );
+              const entryB = entriesForDivision.find((entry) =>
+                activeScheduleFormat === "doubles" ? entry.team_id === manualMatch.entryBSelectionId : entry.player_id === manualMatch.entryBSelectionId
+              );
+              if (!entryA || !entryB) return [];
+              const scheduleWeekStart = scheduleStartDate || selectedTournament.start_date;
+              return [
+                {
+                  id: `${scheduleDivision.id}-manual-${index + 1}-${entryA.id}-${entryB.id}`,
+                  divisionId: scheduleDivision.id,
+                  round: index + 1,
+                  roundLabel: "Manual",
+                  entryAId: entryA.id,
+                  entryBId: entryB.id,
+                  scheduleWeekStart,
+                  scheduleWeekEnd: addDays(scheduleWeekStart, 6),
+                  extensionWeekStart: addDays(scheduleWeekStart, 7),
+                  extensionWeekEnd: addDays(scheduleWeekStart, 13),
+                  status: "scheduled" as MatchStatus,
+                  sets: []
+                }
+              ];
+            })
+        : scheduleType === "eliminator"
         ? generateEliminatorSchedule({
-            divisionId: selectedScheduleDivision.id,
+            divisionId: scheduleDivision.id,
             entries: scheduleEntries,
-            startDate: selectedTournament.start_date,
+            startDate: scheduleStartDate || selectedTournament.start_date,
             endDate: selectedTournament.end_date
           })
         : generateRoundRobinSchedule({
-            divisionId: selectedScheduleDivision.id,
+            divisionId: scheduleDivision.id,
             entries: scheduleEntries,
-            startDate: selectedTournament.start_date,
+            startDate: scheduleStartDate || selectedTournament.start_date,
             endDate: selectedTournament.end_date
           });
 
     if (generated.length === 0) {
       setGeneratingSchedule(false);
-      setMessage(`${selectedScheduleDivision.name} has no playable rounds in the tournament date range.`);
+      setMessage(`${scheduleDivision.name} has no playable rounds in the tournament date range.`);
       return;
     }
 
@@ -1064,6 +1189,9 @@ export function AdminWorkspace() {
       entry_a_id: string;
       entry_b_id: string;
       target_score: number;
+      number_of_sets: number;
+      restrict_score_updates: boolean;
+      allow_forfeit: boolean;
       schedule_week_start: string;
       schedule_week_end: string;
       extension_week_start: string;
@@ -1076,6 +1204,9 @@ export function AdminWorkspace() {
       entry_a_id: match.entryAId,
       entry_b_id: match.entryBId,
       target_score: targetScore,
+      number_of_sets: Number(scheduleNumberOfSets) || 3,
+      restrict_score_updates: restrictScoreUpdates,
+      allow_forfeit: allowGameForfeit,
       schedule_week_start: match.scheduleWeekStart,
       schedule_week_end: match.scheduleWeekEnd,
       extension_week_start: match.extensionWeekStart,
@@ -1103,7 +1234,13 @@ export function AdminWorkspace() {
         status: row.status
       }));
       const fallback = await supabase.from("matches").insert(rowsWithoutOptionalColumns).select(matchSelectBasic);
-      insertData = ((fallback.data || []) as MatchRow[]).map((match) => ({ ...match, target_score: 11 }));
+      insertData = ((fallback.data || []) as MatchRow[]).map((match) => ({
+        ...match,
+        target_score: 11,
+        number_of_sets: 3,
+        restrict_score_updates: false,
+        allow_forfeit: true
+      }));
       insertErrorMessage = fallback.error?.message || "";
     } else {
       insertData = (data || []) as MatchRow[];
@@ -1139,7 +1276,7 @@ export function AdminWorkspace() {
       ].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round)
     );
 
-    const scheduleLabel = scheduleType === "eliminator" ? generated[0]?.roundLabel || "Eliminator" : "round robin";
+    const scheduleLabel = scheduleType === "manual" ? "manual" : scheduleType === "eliminator" ? generated[0]?.roundLabel || "Eliminator" : "round robin";
     setMessage(
       savedOptionalColumns
         ? `Generated ${created.length} ${scheduleLabel} match${created.length === 1 ? "" : "es"} to ${targetScore} points.${replacementNote}`
@@ -1187,62 +1324,259 @@ export function AdminWorkspace() {
   return (
     <>
       <section className="hero">
-        <div>
-          <p className="eyebrow">Admin workspace</p>
-          <h1>Tournament control center</h1>
-          <p className="hero-copy">
-            Set up divisions, approve registrations, generate round robin weeks, manage forfeits, and correct scores.
-          </p>
-        </div>
-        <div className="card notice">
-          <h2>{selectedTournament ? selectedTournament.name : "No tournament selected"}</h2>
-          <p className="subtle">
-            {selectedTournament
-              ? `${selectedTournament.sport} from ${selectedTournament.start_date} through ${selectedTournament.end_date}`
-              : "Create a tournament, add divisions, approve entries, then generate the schedule."}
-          </p>
-          <div className="schedule-builder">
-            <div className="grid two">
-              <label className="field">
-                <span>Division</span>
-                <select
-                  disabled={divisions.length === 0}
-                  onChange={(event) => setSelectedScheduleDivisionId(event.target.value)}
-                  value={selectedScheduleDivisionId}
-                >
-                  {divisions.length === 0 ? <option value="">No divisions yet</option> : null}
-                  {divisions.map((division) => (
-                    <option key={division.id} value={division.id}>
-                      {division.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Schedule type</span>
-                <select onChange={(event) => setScheduleType(event.target.value as "round_robin" | "eliminator")} value={scheduleType}>
-                  <option value="round_robin">Round robin</option>
-                  <option value="eliminator">Eliminator bracket</option>
-                </select>
-              </label>
-            </div>
-
-            <label className="field">
-              <span>Game target score</span>
-              <select onChange={(event) => setScheduleTargetScore(event.target.value)} value={scheduleTargetScore}>
-                <option value="11">11 points</option>
-                <option value="15">15 points</option>
+        <div className="schedule-shell tournament-shell">
+          <form className="schedule-builder" onSubmit={createTournament}>
+            <p className="eyebrow">Step 1</p>
+            <h1>Manage Tournaments</h1>
+            <label className="schedule-panel field">
+              <span>Name</span>
+              <input
+                onChange={(event) => setTournamentForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Tournament Name"
+                required
+                value={tournamentForm.name}
+              />
+            </label>
+            <label className="schedule-panel field">
+              <span>Select Sport</span>
+              <select
+                onChange={(event) => setTournamentForm((current) => ({ ...current, sport: event.target.value as Sport }))}
+                value={tournamentForm.sport}
+              >
+                <option value="pickleball">Pickleball</option>
+                <option value="badminton">Badminton</option>
+                <option value="tennis">Tennis</option>
+                <option value="volleyball">Volleyball</option>
               </select>
             </label>
+            <div className="grid two">
+              <label className="schedule-panel field">
+                <span>Start date</span>
+                <input
+                  onChange={(event) => setTournamentForm((current) => ({ ...current, startDate: event.target.value }))}
+                  required
+                  type="date"
+                  value={tournamentForm.startDate}
+                />
+              </label>
+              <label className="schedule-panel field">
+                <span>End date</span>
+                <input
+                  onChange={(event) => setTournamentForm((current) => ({ ...current, endDate: event.target.value }))}
+                  required
+                  type="date"
+                  value={tournamentForm.endDate}
+                />
+              </label>
+            </div>
+            <div className="schedule-panel scoring-panel">
+              <strong>Points awarded for Win</strong>
+              <span>4</span>
+              <strong>Points awarded for Loss</strong>
+              <span>1</span>
+              <strong>Bonus Points awarded for each set Win when Lost</strong>
+              <span>1</span>
+            </div>
+            <label className="schedule-panel field">
+              <span>Selected tournament</span>
+              <select
+                disabled={tournaments.length === 0}
+                onChange={(event) => setSelectedTournamentId(event.target.value)}
+                value={selectedTournamentId}
+              >
+                {tournaments.length === 0 ? <option value="">No tournaments yet</option> : null}
+                {tournaments.map((tournament) => (
+                  <option key={tournament.id} value={tournament.id}>
+                    {tournament.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="button schedule-next" disabled={savingTournament || loading || !adminUser} type="submit">
+              <CalendarPlus size={18} aria-hidden />
+              {savingTournament ? "Saving..." : "Save Tournament"}
+            </button>
+            {message ? (
+              <p className="subtle" data-testid="admin-status" role="status">
+                {message}
+              </p>
+            ) : null}
+          </form>
+        </div>
+        <div className="schedule-shell">
+          <div className="schedule-builder">
+            <p className="eyebrow">Step 2</p>
+            <h2>Let's customize your Schedule</h2>
+            <p className="schedule-context">
+              {selectedTournament
+                ? `${selectedTournament.name} · ${selectedTournament.sport} · ${selectedTournament.start_date} to ${selectedTournament.end_date}`
+                : "Create a tournament before scheduling."}
+            </p>
 
-            {selectedScheduleDivision ? (
+            {scheduleStep === "setup" ? (
+              <>
+                <label className="schedule-panel field">
+                  <span>Select Level</span>
+                  <select
+                    onChange={(event) => setSelectedScheduleDivisionId(event.target.value)}
+                    value={selectedScheduleDivisionId}
+                  >
+                    <option value="">Create new schedule</option>
+                    {divisions.map((division) => (
+                      <option key={division.id} value={division.id}>
+                        {division.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="schedule-panel field">
+                  <strong>Schedule Name</strong>
+                  <input onChange={(event) => setScheduleName(event.target.value)} placeholder="Division X" value={scheduleName} />
+                </label>
+
+                <label className="schedule-panel field">
+                  <span>Skill Level</span>
+                  <input onChange={(event) => setScheduleSkillLevel(event.target.value)} placeholder="3.5" value={scheduleSkillLevel} />
+                </label>
+
+                <label className="schedule-panel field">
+                  <span>Number of Sets</span>
+                  <input
+                    min="1"
+                    onChange={(event) => setScheduleNumberOfSets(event.target.value)}
+                    type="number"
+                    value={scheduleNumberOfSets}
+                  />
+                </label>
+
+                <div className="schedule-panel">
+                  <strong>Schedule Type</strong>
+                  <div className="choice-row">
+                    <button
+                      className={`choice-button ${scheduleType === "round_robin" ? "selected" : ""}`}
+                      onClick={() => setScheduleType("round_robin")}
+                      type="button"
+                    >
+                      <span aria-hidden>{scheduleType === "round_robin" ? "✓" : ""}</span>
+                      League
+                    </button>
+                    <button
+                      className={`choice-button ${scheduleType === "eliminator" ? "selected" : ""}`}
+                      onClick={() => setScheduleType("eliminator")}
+                      type="button"
+                    >
+                      <span aria-hidden>{scheduleType === "eliminator" ? "✓" : ""}</span>
+                      Playoff
+                    </button>
+                    <button
+                      className={`choice-button ${scheduleType === "manual" ? "selected" : ""}`}
+                      onClick={() => setScheduleType("manual")}
+                      type="button"
+                    >
+                      <span aria-hidden>{scheduleType === "manual" ? "✓" : ""}</span>
+                      Manual
+                    </button>
+                  </div>
+                </div>
+
+                <div className="schedule-panel">
+                  <strong>Game Type</strong>
+                  <div className="choice-row">
+                    <button
+                      className={`choice-button ${activeScheduleFormat === "singles" ? "selected" : ""}`}
+                      onClick={() => {
+                        setSelectedScheduleDivisionId("");
+                        setScheduleFormat("singles");
+                      }}
+                      type="button"
+                    >
+                      <span aria-hidden>{activeScheduleFormat === "singles" ? "✓" : ""}</span>
+                      Singles
+                    </button>
+                    <button
+                      className={`choice-button ${activeScheduleFormat === "doubles" ? "selected" : ""}`}
+                      onClick={() => {
+                        setSelectedScheduleDivisionId("");
+                        setScheduleFormat("doubles");
+                      }}
+                      type="button"
+                    >
+                      <span aria-hidden>{activeScheduleFormat === "doubles" ? "✓" : ""}</span>
+                      Doubles
+                    </button>
+                  </div>
+                </div>
+
+                <label className="schedule-panel field">
+                  <span>Select Date type</span>
+                  <select onChange={(event) => setScheduleDateType(event.target.value)} value={scheduleDateType}>
+                    <option value="play_by">Play by Date (Finish the game before this date)</option>
+                    <option value="weekly_window">Weekly Window</option>
+                  </select>
+                </label>
+
+                <label className="schedule-panel field">
+                  <span>Start Date</span>
+                  <input onChange={(event) => setScheduleStartDate(event.target.value)} type="date" value={scheduleStartDate} />
+                </label>
+
+                <div className="toggle-list">
+                  <label className="switch-row">
+                    <span>Restrict Score Updates</span>
+                    <input checked={restrictScoreUpdates} onChange={(event) => setRestrictScoreUpdates(event.target.checked)} type="checkbox" />
+                  </label>
+                  <label className="switch-row">
+                    <span>Allow Game Forfeit</span>
+                    <input checked={allowGameForfeit} onChange={(event) => setAllowGameForfeit(event.target.checked)} type="checkbox" />
+                  </label>
+                  <label className="switch-row">
+                    <span>Change Winning Score</span>
+                    <input checked={changeWinningScore} onChange={(event) => setChangeWinningScore(event.target.checked)} type="checkbox" />
+                  </label>
+                </div>
+
+                {changeWinningScore ? (
+                  <label className="schedule-panel field">
+                    <span>Winning Score</span>
+                    <select onChange={(event) => setScheduleTargetScore(event.target.value)} value={scheduleTargetScore}>
+                      <option value="11">11 points</option>
+                      <option value="15">15 points</option>
+                    </select>
+                  </label>
+                ) : null}
+
+                <button
+                  className="button schedule-next"
+                  disabled={!selectedTournament || !scheduleName.trim()}
+                  onClick={() => setScheduleStep("entries")}
+                  type="button"
+                >
+                  Next
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="schedule-step-header">
+                  <div>
+                    <p className="eyebrow">Step 3</p>
+                    <h3>{activeScheduleName}</h3>
+                    <p className="schedule-context">
+                      {scheduleType === "round_robin" ? "League schedule" : scheduleType === "eliminator" ? "Playoff schedule" : "Manual schedule"} · {activeScheduleFormat}
+                    </p>
+                  </div>
+                  <button className="button secondary" onClick={() => setScheduleStep("setup")} type="button">
+                    Back
+                  </button>
+                </div>
+            {selectedTournament ? (
               <div className="entry-picker">
                 <div className="section-title">
-                  <h3>{selectedScheduleDivision.format === "doubles" ? "Choose Teams" : "Choose Players"}</h3>
+                  <h3>{activeScheduleFormat === "doubles" ? "Choose Teams" : "Choose Players"}</h3>
                   <span className="pill blue">{scheduleSelectionCount} selected</span>
                 </div>
 
-                {selectedScheduleDivision.format === "doubles" ? (
+                {activeScheduleFormat === "doubles" ? (
                   <>
                     <div className="team-builder">
                       <label className="field">
@@ -1472,6 +1806,75 @@ export function AdminWorkspace() {
               </div>
             ) : null}
 
+            {scheduleType === "manual" && manualEntryOptions.length > 0 ? (
+              <div className="manual-builder">
+                <div className="section-title">
+                  <h3>Manual Matchups</h3>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      setManualMatches((current) => [
+                        ...current,
+                        { id: `manual-${Date.now()}`, entryASelectionId: "", entryBSelectionId: "" }
+                      ])
+                    }
+                    type="button"
+                  >
+                    <Plus size={18} aria-hidden />
+                    Add matchup
+                  </button>
+                </div>
+                {manualMatches.map((manualMatch, index) => (
+                  <div className="manual-row" key={manualMatch.id}>
+                    <label className="field">
+                      <span>{activeScheduleFormat === "doubles" ? "Team A" : "Player A"}</span>
+                      <select
+                        onChange={(event) =>
+                          setManualMatches((current) =>
+                            current.map((item) => (item.id === manualMatch.id ? { ...item, entryASelectionId: event.target.value } : item))
+                          )
+                        }
+                        value={manualMatch.entryASelectionId}
+                      >
+                        <option value="">Select</option>
+                        {manualEntryOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>{activeScheduleFormat === "doubles" ? "Team B" : "Player B"}</span>
+                      <select
+                        onChange={(event) =>
+                          setManualMatches((current) =>
+                            current.map((item) => (item.id === manualMatch.id ? { ...item, entryBSelectionId: event.target.value } : item))
+                          )
+                        }
+                        value={manualMatch.entryBSelectionId}
+                      >
+                        <option value="">Select</option>
+                        {manualEntryOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="button secondary"
+                      disabled={manualMatches.length === 1}
+                      onClick={() => setManualMatches((current) => current.filter((item) => item.id !== manualMatch.id))}
+                      type="button"
+                    >
+                      Remove {index + 1}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             {selectedScheduleDivision && selectedScheduleDivisionMatches.length > 0 ? (
               <div className="replace-schedule">
                 <label className="check-toggle">
@@ -1501,166 +1904,9 @@ export function AdminWorkspace() {
                 Publish standings
               </button>
             </div>
+              </>
+            )}
           </div>
-        </div>
-      </section>
-
-      <section className="grid two">
-        <form className="card form-grid" onSubmit={createTournament}>
-          <div className="section-title">
-            <h2>Create Tournament</h2>
-            <Trophy size={22} aria-hidden />
-          </div>
-          <label className="field">
-            <span>Tournament name</span>
-            <input
-              onChange={(event) => setTournamentForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Club championship"
-              required
-              value={tournamentForm.name}
-            />
-          </label>
-          <label className="field">
-            <span>Sport</span>
-            <select
-              onChange={(event) => setTournamentForm((current) => ({ ...current, sport: event.target.value as Sport }))}
-              value={tournamentForm.sport}
-            >
-              <option value="pickleball">Pickleball</option>
-              <option value="badminton">Badminton</option>
-              <option value="tennis">Tennis</option>
-              <option value="volleyball">Volleyball</option>
-            </select>
-          </label>
-          <div className="grid two">
-            <label className="field">
-              <span>Start date</span>
-              <input
-                onChange={(event) => setTournamentForm((current) => ({ ...current, startDate: event.target.value }))}
-                required
-                type="date"
-                value={tournamentForm.startDate}
-              />
-            </label>
-            <label className="field">
-              <span>End date</span>
-              <input
-                onChange={(event) => setTournamentForm((current) => ({ ...current, endDate: event.target.value }))}
-                required
-                type="date"
-                value={tournamentForm.endDate}
-              />
-            </label>
-          </div>
-          <button className="button" disabled={savingTournament || loading || !adminUser} type="submit">
-            <CalendarPlus size={18} aria-hidden />
-            {savingTournament ? "Creating..." : "Create tournament"}
-          </button>
-        </form>
-
-        <div className="card form-grid">
-          <div className="section-title">
-            <h2>Tournament</h2>
-            <CalendarPlus size={22} aria-hidden />
-          </div>
-          <label className="field">
-            <span>Selected tournament</span>
-            <select
-              disabled={tournaments.length === 0}
-              onChange={(event) => setSelectedTournamentId(event.target.value)}
-              value={selectedTournamentId}
-            >
-              {tournaments.length === 0 ? <option value="">No tournaments yet</option> : null}
-              {tournaments.map((tournament) => (
-                <option key={tournament.id} value={tournament.id}>
-                  {tournament.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {message ? (
-            <p className="subtle" data-testid="admin-status" role="status">
-              {message}
-              {message.startsWith("Sign in") ? (
-                <>
-                  {" "}
-                  <Link className="text-link" href="/login">
-                    Open login
-                  </Link>
-                </>
-              ) : null}
-            </p>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="admin-columns" style={{ marginTop: 14 }}>
-        <form className="card form-grid" onSubmit={saveDivision}>
-          <div className="section-title">
-            <h2>Create Division</h2>
-            <Plus size={22} aria-hidden />
-          </div>
-          <label className="field">
-            <span>Skill level</span>
-            <input
-              onChange={(event) => setDivisionForm((current) => ({ ...current, skillLevel: event.target.value }))}
-              required
-              value={divisionForm.skillLevel}
-            />
-          </label>
-          <label className="field">
-            <span>Format</span>
-            <select
-              onChange={(event) => setDivisionForm((current) => ({ ...current, format: event.target.value as DivisionFormat }))}
-              value={divisionForm.format}
-            >
-              <option value="singles">Singles</option>
-              <option value="doubles">Doubles</option>
-            </select>
-          </label>
-          <p className="subtle">Division name: {divisionName}</p>
-          <button className="button" data-testid="save-division" disabled={savingDivision || !selectedTournament} type="submit">
-            <CalendarPlus size={18} aria-hidden />
-            {savingDivision ? "Saving..." : "Save division"}
-          </button>
-        </form>
-
-        <div className="card">
-          <div className="section-title">
-            <h2>Registrations</h2>
-            <ListChecks size={22} aria-hidden />
-          </div>
-          <EmptyState
-            icon={<ListChecks size={24} aria-hidden />}
-            title="No pending registrations"
-            body="Player registration requests will appear here for approval."
-          />
-        </div>
-
-        <div className="card">
-          <div className="section-title">
-            <h2>Divisions</h2>
-            <Plus size={22} aria-hidden />
-          </div>
-          {divisions.length > 0 ? (
-            <div className="match-list">
-              {divisions.map((division) => (
-                <article className="match-card" key={division.id}>
-                  <div className="match-meta">
-                    <strong>{division.name}</strong>
-                    <span className="pill blue">{division.format}</span>
-                  </div>
-                  <p className="subtle">Skill level {division.skill_level}</p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={<Plus size={24} aria-hidden />}
-              title="No saved divisions"
-              body="Saved divisions for the selected tournament will appear here."
-            />
-          )}
         </div>
       </section>
 
@@ -1754,6 +2000,14 @@ export function AdminWorkspace() {
           <div className="form-grid">
             <h3>Upload People</h3>
             <p className="subtle">Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, role, password, rating.</p>
+            <div className="toolbar compact-toolbar">
+              <a className="button secondary" download href="/player-import-template.xlsx">
+                Download Excel template
+              </a>
+              <a className="button secondary" download href="/player-import-template.csv">
+                Download CSV template
+              </a>
+            </div>
             <label className="file-drop">
               <Upload size={22} aria-hidden />
               <span>{importingPlayers ? "Importing..." : "Choose people file"}</span>
@@ -1855,6 +2109,7 @@ export function AdminWorkspace() {
                     <span className="pill blue">{division?.name || "Division"}</span>
                     <span className="pill">{match.round_label || `Round ${match.round}`}</span>
                     <span className="pill">To {match.target_score || 11}</span>
+                    <span className="pill">{match.number_of_sets || 3} sets</span>
                   </div>
                   <div className="versus">
                     <span>{entryA?.label || "Entry A"}</span>

@@ -2,9 +2,16 @@ export const matchSelectBasic =
   "id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status";
 
 export const matchSelectWithRoundLabel = `${matchSelectBasic}, round_label`;
-export const matchSelectWithTargetScore = `${matchSelectWithRoundLabel}, target_score`;
+export const matchSelectWithTargetScore = `${matchSelectWithRoundLabel}, target_score, number_of_sets, restrict_score_updates, allow_forfeit`;
 
 export function isMissingTargetScoreColumn(error: { message?: string } | string | null | undefined) {
   const message = (typeof error === "string" ? error : error?.message || "").toLowerCase();
-  return message.includes("target_score") || message.includes("round_label") || message.includes("schema cache");
+  return (
+    message.includes("target_score") ||
+    message.includes("round_label") ||
+    message.includes("number_of_sets") ||
+    message.includes("restrict_score_updates") ||
+    message.includes("allow_forfeit") ||
+    message.includes("schema cache")
+  );
 }

@@ -335,16 +335,151 @@ h3 {
   min-height: 42px;
 }
 
+.schedule-shell {
+  border-radius: 8px;
+  background: #48aeb2;
+  padding: 18px;
+  color: #182028;
+}
+
 .schedule-builder,
 .entry-picker,
-.team-builder {
+.team-builder,
+.toggle-list {
   display: grid;
+  gap: 12px;
+}
+
+.schedule-builder h2 {
+  margin-bottom: 4px;
+  color: #182028;
+}
+
+.tournament-shell h1 {
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 1.55rem;
+  line-height: 1.15;
+}
+
+.tournament-shell .eyebrow,
+.schedule-shell .eyebrow {
+  color: #fff;
+}
+
+.scoring-panel {
+  gap: 6px;
+}
+
+.scoring-panel span {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef1f3;
+}
+
+.scoring-panel span:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.schedule-context {
+  margin: 0;
+  color: rgba(24, 32, 40, 0.76);
+  font-weight: 700;
+}
+
+.schedule-panel {
+  display: grid;
+  gap: 8px;
+  min-height: 72px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+.schedule-panel strong,
+.schedule-panel > span {
+  font-weight: 900;
+}
+
+.schedule-panel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.schedule-panel input,
+.schedule-panel select {
+  border-radius: 0;
+}
+
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding-top: 8px;
+}
+
+.choice-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.choice-button span {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #7c8185;
+  color: #fff;
+  font-weight: 900;
+}
+
+.choice-button.selected span {
+  background: #62d982;
+}
+
+.choice-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.switch-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 40px;
+  padding: 4px 8px;
+}
+
+.switch-row input {
+  width: 42px;
+  height: 24px;
+  accent-color: #62d982;
+}
+
+.schedule-next {
+  width: 100%;
+  background: #62d982;
+}
+
+.schedule-step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
 .entry-picker {
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 8px;
   background: #fff;
 }
