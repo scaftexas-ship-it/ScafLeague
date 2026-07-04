@@ -465,6 +465,28 @@ h3 {
   accent-color: #62d982;
 }
 
+.advanced-option-panel {
+  display: grid;
+  gap: 0;
+}
+
+.advanced-option-panel .schedule-panel {
+  min-height: 64px;
+  border-bottom: 1px solid #eef1f3;
+}
+
+.advanced-option-panel .schedule-panel:last-child {
+  border-bottom: 0;
+}
+
+.advanced-note {
+  margin: 0;
+  color: #ffe500;
+  font-size: 0.86rem;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
 .schedule-next {
   width: 100%;
   background: #62d982;

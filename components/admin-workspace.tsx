@@ -1550,25 +1550,77 @@ export function AdminWorkspace() {
                     <span>Restrict Score Updates</span>
                     <input checked={restrictScoreUpdates} onChange={(event) => setRestrictScoreUpdates(event.target.checked)} type="checkbox" />
                   </label>
+                  {restrictScoreUpdates ? (
+                    <div className="advanced-option-panel">
+                      <label className="schedule-panel field">
+                        <span>Score can be updated this many days prior to the Game date</span>
+                        <input
+                          min="0"
+                          onChange={(event) => setScoreUpdateBeforeDays(event.target.value)}
+                          type="number"
+                          value={scoreUpdateBeforeDays}
+                        />
+                      </label>
+                      <label className="schedule-panel field">
+                        <span>Score can be updated this many days after the Game date</span>
+                        <input
+                          min="0"
+                          onChange={(event) => setScoreUpdateAfterDays(event.target.value)}
+                          type="number"
+                          value={scoreUpdateAfterDays}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                   <label className="switch-row">
                     <span>Allow Game Forfeit</span>
                     <input checked={allowGameForfeit} onChange={(event) => setAllowGameForfeit(event.target.checked)} type="checkbox" />
                   </label>
+                  {allowGameForfeit ? (
+                    <div className="advanced-option-panel">
+                      <label className="schedule-panel field">
+                        <span>Game can be forfeited this many days prior to the Game date</span>
+                        <input
+                          min="0"
+                          onChange={(event) => setForfeitBeforeDays(event.target.value)}
+                          type="number"
+                          value={forfeitBeforeDays}
+                        />
+                      </label>
+                      <label className="schedule-panel field">
+                        <span>Game can be forfeited this many days after the Game date</span>
+                        <input
+                          min="0"
+                          onChange={(event) => setForfeitAfterDays(event.target.value)}
+                          type="number"
+                          value={forfeitAfterDays}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                   <label className="switch-row">
                     <span>Change Winning Score</span>
                     <input checked={changeWinningScore} onChange={(event) => setChangeWinningScore(event.target.checked)} type="checkbox" />
                   </label>
+                  {changeWinningScore ? (
+                    <>
+                      <p className="advanced-note">
+                        This is advanced setting. Use this only to change the default winning score for a game. Some Sports does not have a
+                        winning score.
+                      </p>
+                      <label className="schedule-panel field">
+                        <span>Winning Score</span>
+                        <input
+                          min="1"
+                          onChange={(event) => setScheduleTargetScore(event.target.value)}
+                          placeholder="Enter winning score"
+                          type="number"
+                          value={scheduleTargetScore}
+                        />
+                      </label>
+                    </>
+                  ) : null}
                 </div>
-
-                {changeWinningScore ? (
-                  <label className="schedule-panel field">
-                    <span>Winning Score</span>
-                    <select onChange={(event) => setScheduleTargetScore(event.target.value)} value={scheduleTargetScore}>
-                      <option value="11">11 points</option>
-                      <option value="15">15 points</option>
-                    </select>
-                  </label>
-                ) : null}
 
                 <button
                   className="button schedule-next"
