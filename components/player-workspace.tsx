@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Flag, Send, Trophy } from "lucide-react";
+import { ClipboardList, Flag, Medal, Send, Trophy } from "lucide-react";
 import { addDays, canClaimForfeit } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
-import type { Match, MatchSet, MatchStatus } from "@/lib/types";
+import type { Match, MatchSet, MatchStatus, Sport } from "@/lib/types";
 
 type AppUser = {
   id: string;
@@ -40,6 +40,14 @@ type DivisionEntryRow = {
   team_id: string | null;
 };
 
+type TournamentRow = {
+  id: string;
+  name: string;
+  sport: Sport;
+  start_date: string;
+  end_date: string;
+};
+
 type MatchRow = {
   id: string;
   division_id: string;
@@ -62,6 +70,18 @@ type MatchRow = {
   forfeit_after_days?: number | null;
 };
 
+type StandingRow = {
+  division_id: string;
+  entry_id: string;
+  played: number;
+  wins: number;
+  losses: number;
+  forfeits_won?: number | null;
+  forfeits_lost?: number | null;
+  cancelled?: number | null;
+  points: number;
+};
+
 export function PlayerWorkspace() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -71,7 +91,13 @@ export function PlayerWorkspace() {
   const [entries, setEntries] = useState<DivisionEntryRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [myEntryIds, setMyEntryIds] = useState<string[]>([]);
+  const [dashboardTournament, setDashboardTournament] = useState<TournamentRow | null>(null);
+  const [dashboardDivisions, setDashboardDivisions] = useState<DivisionRow[]>([]);
+  const [dashboardEntries, setDashboardEntries] = useState<DivisionEntryRow[]>([]);
+  const [dashboardMatches, setDashboardMatches] = useState<MatchRow[]>([]);
+  const [standings, setStandings] = useState<StandingRow[]>([]);
   const [message, setMessage] = useState("Loading player schedule...");
+  const [dashboardMessage, setDashboardMessage] = useState("Loading tournament games...");
 
   useEffect(() => {
     void loadPlayerSchedule();
@@ -79,7 +105,28 @@ export function PlayerWorkspace() {
   }, []);
 
   const scheduledCount = matches.filter((match) => match.status === "scheduled").length;
-  const divisionCount = new Set(matches.map((match) => match.division_id)).size;
+  const divisionCount = new Set(dashboardMatches.map((match) => match.division_id)).size;
+  const pointsTables = useMemo(
+    () =>
+      dashboardDivisions
+        .map((division) => ({
+          division,
+          rows: standings
+            .filter((standing) => standing.division_id === division.id)
+            .map((standing) => ({
+              standing,
+              entry: dashboardEntries.find((entry) => entry.id === standing.entry_id)
+            }))
+            .sort(
+              (a, b) =>
+                b.standing.points - a.standing.points ||
+                b.standing.wins - a.standing.wins ||
+                getMatchesPlayed(b.standing) - getMatchesPlayed(a.standing)
+            )
+        }))
+        .filter((table) => table.rows.length > 0),
+    [dashboardDivisions, dashboardEntries, standings]
+  );
 
   async function loadPlayerSchedule() {
     if (!supabase) {
@@ -126,6 +173,7 @@ export function PlayerWorkspace() {
 
     const currentUser = userRow as AppUser;
     setAppUser(currentUser);
+    await loadTournamentDashboard(currentUser.club_id);
 
     const profileResult = await withTimeout(
       supabase.from("player_profiles").select("id, display_name, rating, user_id").eq("user_id", currentUser.id),
@@ -147,7 +195,7 @@ export function PlayerWorkspace() {
     setProfiles(playerProfiles);
 
     if (playerProfiles.length === 0 && currentUser.role !== "admin") {
-      setMessage("No player profile is linked to this login yet. Ask an admin to connect your account to a player profile.");
+      setMessage("No player profile is linked to this login yet. Tournament games are still visible below.");
       return;
     }
 
@@ -157,6 +205,106 @@ export function PlayerWorkspace() {
     }
 
     await loadMatchesForProfiles(playerProfiles);
+  }
+
+  async function loadTournamentDashboard(clubId: string) {
+    if (!supabase) return;
+
+    const { data: tournamentRows, error: tournamentError } = await supabase
+      .from("tournaments")
+      .select("id, name, sport, start_date, end_date")
+      .eq("club_id", clubId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (tournamentError) {
+      setDashboardMessage(tournamentError.message);
+      return;
+    }
+
+    const selectedTournament = (tournamentRows || [])[0] as TournamentRow | undefined;
+    if (!selectedTournament) {
+      setDashboardMessage("No tournament has been created yet.");
+      return;
+    }
+
+    setDashboardTournament(selectedTournament);
+
+    const { data: divisionRows, error: divisionError } = await supabase
+      .from("divisions")
+      .select("id, name, skill_level, format")
+      .eq("tournament_id", selectedTournament.id)
+      .order("created_at", { ascending: true });
+
+    if (divisionError) {
+      setDashboardMessage(divisionError.message);
+      return;
+    }
+
+    const loadedDivisions = (divisionRows || []) as DivisionRow[];
+    const divisionIds = loadedDivisions.map((division) => division.id);
+    setDashboardDivisions(loadedDivisions);
+
+    if (divisionIds.length === 0) {
+      setDashboardMessage("No schedules have been created yet.");
+      return;
+    }
+
+    const { data: entryRows, error: entryError } = await supabase
+      .from("division_entries")
+      .select("id, division_id, label, player_id, team_id")
+      .in("division_id", divisionIds);
+
+    if (entryError) {
+      setDashboardMessage(entryError.message);
+      return;
+    }
+
+    const { data: standingRows, error: standingError } = await supabase
+      .from("standings")
+      .select("division_id, entry_id, played, wins, losses, forfeits_won, forfeits_lost, cancelled, points")
+      .in("division_id", divisionIds);
+
+    if (!standingError) {
+      setStandings(
+        ((standingRows || []) as StandingRow[]).sort((a, b) => b.points - a.points || b.wins - a.wins || getMatchesPlayed(b) - getMatchesPlayed(a))
+      );
+    }
+
+    const { data: matchRows, error: matchError } = await supabase
+      .from("matches")
+      .select(matchSelectWithTargetScore)
+      .in("division_id", divisionIds)
+      .order("schedule_week_start", { ascending: true })
+      .order("round", { ascending: true });
+
+    if (matchError) {
+      if (!isMissingTargetScoreColumn(matchError)) {
+        setDashboardMessage(matchError.message);
+        return;
+      }
+
+      const { data: fallbackMatches, error: fallbackMatchError } = await supabase
+        .from("matches")
+        .select(matchSelectBasic)
+        .in("division_id", divisionIds)
+        .order("schedule_week_start", { ascending: true })
+        .order("round", { ascending: true });
+
+      if (fallbackMatchError) {
+        setDashboardMessage(fallbackMatchError.message);
+        return;
+      }
+
+      setDashboardEntries((entryRows || []) as DivisionEntryRow[]);
+      setDashboardMatches(withMatchDefaults((fallbackMatches || []) as MatchRow[]));
+      setDashboardMessage((fallbackMatches || []).length > 0 ? "Tournament games loaded." : "No matches have been generated yet.");
+      return;
+    }
+
+    setDashboardEntries((entryRows || []) as DivisionEntryRow[]);
+    setDashboardMatches((matchRows || []) as MatchRow[]);
+    setDashboardMessage((matchRows || []).length > 0 ? "Tournament games loaded." : "No matches have been generated yet.");
   }
 
   async function loadAdminPreview(currentUser: AppUser) {
@@ -294,17 +442,7 @@ export function PlayerWorkspace() {
         return;
       }
 
-      const allMatches = ((fallbackMatches || []) as MatchRow[]).map((match) => ({
-        ...match,
-        target_score: 11,
-        number_of_sets: 3,
-        restrict_score_updates: false,
-        score_update_before_days: 0,
-        score_update_after_days: 0,
-        allow_forfeit: true,
-        forfeit_before_days: 0,
-        forfeit_after_days: 0
-      }));
+      const allMatches = withMatchDefaults((fallbackMatches || []) as MatchRow[]);
       const visibleMatches =
         entryIds.length > 0 ? allMatches.filter((match) => entryIds.includes(match.entry_a_id) || entryIds.includes(match.entry_b_id)) : allMatches;
 
@@ -381,7 +519,10 @@ export function PlayerWorkspace() {
           : item
       )
     );
-    setMessage("Score submitted.");
+    if (appUser) {
+      await loadTournamentDashboard(appUser.club_id);
+    }
+    setMessage("Score submitted. Leaderboard updated.");
   }
 
   async function claimForfeit(match: MatchRow, claimedByEntryId: string) {
@@ -434,7 +575,10 @@ export function PlayerWorkspace() {
           : item
       )
     );
-    setMessage("Forfeit recorded.");
+    if (appUser) {
+      await loadTournamentDashboard(appUser.club_id);
+    }
+    setMessage("Forfeit recorded. Leaderboard updated.");
   }
 
   return (
@@ -462,19 +606,19 @@ export function PlayerWorkspace() {
         </div>
         <div className="grid two">
           <div className="card metric">
-            <span className="pill blue">Scheduled</span>
+            <span className="pill blue">My Scheduled</span>
             <strong>{scheduledCount}</strong>
             <p className="subtle">Upcoming match windows</p>
           </div>
           <div className="card metric">
-            <span className="pill">Divisions</span>
+            <span className="pill">{dashboardTournament?.sport || "Tournament"}</span>
             <strong>{divisionCount}</strong>
-            <p className="subtle">Current approved entries</p>
+            <p className="subtle">Schedules with generated games</p>
           </div>
         </div>
       </section>
 
-      <section className="grid two">
+      <section className="player-stack">
         <div className="card">
           <div className="section-title">
             <h2>Action Needed</h2>
@@ -500,14 +644,108 @@ export function PlayerWorkspace() {
             <EmptyState
               icon={<Flag size={24} aria-hidden />}
               title="No player matches"
-              body="Your scheduled matches will appear after an admin adds you to a division and generates the schedule."
+              body="Your personal games appear after your login is linked to a scheduled player or team. All tournament games are shown below."
+            />
+          )}
+        </div>
+      </section>
+
+      <section className="player-stack">
+        <div className="card">
+          <div className="section-title">
+            <h2>All Tournament Games</h2>
+            <ClipboardList size={22} aria-hidden />
+          </div>
+          <p className="subtle" role="status">{dashboardMessage}</p>
+          {dashboardMatches.length > 0 ? (
+            <div className="match-list">
+              {dashboardMatches.map((match) => {
+                const division = dashboardDivisions.find((item) => item.id === match.division_id);
+                const entryA = dashboardEntries.find((entry) => entry.id === match.entry_a_id);
+                const entryB = dashboardEntries.find((entry) => entry.id === match.entry_b_id);
+
+                return (
+                  <article className="match-card" key={match.id}>
+                    <div className="match-meta">
+                      <span className="pill blue">{division?.name || "Schedule"}</span>
+                      <span className="pill">{match.round_label || `Round ${match.round}`}</span>
+                      <span className="pill">To {match.target_score || 11}</span>
+                    </div>
+                    <div className="versus">
+                      <span>{entryA?.label || "Entry A"}</span>
+                      <span className="subtle">vs</span>
+                      <span>{entryB?.label || "Entry B"}</span>
+                    </div>
+                    <div className="score-line">
+                      <span className="subtle">{match.schedule_week_start} to {match.extension_week_end}</span>
+                      <span className="pill orange">{match.status.replace("_", " ")}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<ClipboardList size={24} aria-hidden />}
+              title="No tournament games"
+              body="Generated schedules will appear here after an admin creates matches."
             />
           )}
         </div>
 
         <div className="card">
           <div className="section-title">
-            <h2>My Standings</h2>
+            <h2>Leaderboards</h2>
+            <Medal size={22} aria-hidden />
+          </div>
+          {pointsTables.length > 0 ? (
+            <div className="points-board-list">
+              {pointsTables.map(({ division, rows }) => (
+                <div className="points-board" key={division.id}>
+                  <h3>{division.name}</h3>
+                  <div className="points-table-scroll" role="region" aria-label={`${division.name} points table`}>
+                    <table className="points-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Player</th>
+                          <th scope="col">M</th>
+                          <th scope="col">W</th>
+                          <th scope="col">L</th>
+                          <th scope="col">B</th>
+                          <th scope="col">P</th>
+                          <th scope="col">R</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map(({ entry, standing }) => (
+                          <tr key={`${standing.division_id}-${standing.entry_id}`}>
+                            <th scope="row">{entry?.label || "Entry"}</th>
+                            <td>{getMatchesPlayed(standing)}</td>
+                            <td>{standing.wins}</td>
+                            <td>{standing.losses + (standing.forfeits_lost || 0)}</td>
+                            <td>{getBonusPoints(standing)}</td>
+                            <td>{standing.points}</td>
+                            <td>{getWinRate(standing)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<Medal size={24} aria-hidden />}
+              title="No standings yet"
+              body="Leaderboards are calculated after scores or forfeits are posted."
+            />
+          )}
+        </div>
+
+        <div className="card player-profile-card">
+          <div className="section-title">
+            <h2>My Profile</h2>
             <Trophy size={22} aria-hidden />
           </div>
           {profiles.length > 0 ? (
@@ -816,6 +1054,34 @@ function toDomainMatch(match: MatchRow): Match {
     status: match.status,
     sets: []
   };
+}
+
+function withMatchDefaults(matches: MatchRow[]) {
+  return matches.map((match) => ({
+    ...match,
+    target_score: match.target_score || 11,
+    number_of_sets: match.number_of_sets || 3,
+    restrict_score_updates: match.restrict_score_updates || false,
+    score_update_before_days: match.score_update_before_days || 0,
+    score_update_after_days: match.score_update_after_days || 0,
+    allow_forfeit: match.allow_forfeit !== false,
+    forfeit_before_days: match.forfeit_before_days || 0,
+    forfeit_after_days: match.forfeit_after_days || 0
+  }));
+}
+
+function getMatchesPlayed(standing: StandingRow) {
+  return standing.played + (standing.forfeits_won || 0) + (standing.forfeits_lost || 0);
+}
+
+function getBonusPoints(standing: StandingRow) {
+  return Math.max(standing.points - standing.wins * 4 - standing.losses, 0);
+}
+
+function getWinRate(standing: StandingRow) {
+  const matchesPlayed = getMatchesPlayed(standing);
+  if (matchesPlayed === 0) return "0.00";
+  return ((standing.wins / matchesPlayed) * 100).toFixed(2);
 }
 
 function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
