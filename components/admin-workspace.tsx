@@ -153,6 +153,7 @@ export function AdminWorkspace() {
   const [linkingUser, setLinkingUser] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState("");
   const [importingPlayers, setImportingPlayers] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState("");
   const [assigningEntry, setAssigningEntry] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [creatingScheduleTeam, setCreatingScheduleTeam] = useState(false);
@@ -824,6 +825,8 @@ export function AdminWorkspace() {
 
     const errors: string[] = [];
     let created = 0;
+    let profilesOnly = 0;
+    let loginServiceUnavailable = false;
     for (const row of rows) {
       const response = await fetch("/api/admin/users/invite/", {
         method: "POST",
@@ -844,6 +847,23 @@ export function AdminWorkspace() {
       if (response.ok) {
         created += 1;
       } else {
+        if (response.status === 501 && isServiceRoleMissing(result.error) && row.role === "player" && row.createPlayerProfile) {
+          loginServiceUnavailable = true;
+          const { error: profileError } = await supabase.from("player_profiles").insert({
+            club_id: adminUser.club_id,
+            display_name: row.fullName,
+            rating: row.rating || null
+          });
+          if (profileError) {
+            errors.push(`${row.email}: ${profileError.message}`);
+          } else {
+            profilesOnly += 1;
+          }
+          continue;
+        }
+        if (response.status === 501 && isServiceRoleMissing(result.error)) {
+          loginServiceUnavailable = true;
+        }
         errors.push(`${row.email}: ${result.error || "not imported"}`);
       }
     }
@@ -852,10 +872,38 @@ export function AdminWorkspace() {
     event.target.value = "";
     await Promise.all([loadAppUsers(adminUser.club_id), loadPlayers(adminUser.club_id)]);
     setMessage(
-      errors.length > 0
+      loginServiceUnavailable && profilesOnly > 0
+        ? `Imported ${profilesOnly} player profile${profilesOnly === 1 ? "" : "s"}. Login accounts were skipped because SUPABASE_SERVICE_ROLE_KEY is not set. ${errors.length > 0 ? errors.slice(0, 2).join(" ") : ""}`
+        : errors.length > 0
         ? `Imported ${created} of ${rows.length}. ${errors.slice(0, 3).join(" ")}${errors.length > 3 ? " More errors hidden." : ""}`
         : `Imported ${created} user${created === 1 ? "" : "s"}.`
     );
+  }
+
+  async function downloadTemplate(filename: string, url: string) {
+    setDownloadingTemplate(filename);
+    setMessage("");
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Template file was not available (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setMessage(`${filename} downloaded.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Template download failed.");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } finally {
+      setDownloadingTemplate("");
+    }
   }
 
   async function assignSinglesPlayer(event: FormEvent<HTMLFormElement>) {
@@ -2075,14 +2123,27 @@ export function AdminWorkspace() {
 
           <div className="form-grid">
             <h3>Upload People</h3>
-            <p className="subtle">Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, role, password, rating.</p>
+            <p className="subtle">
+              Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, role, password, rating. Without SUPABASE_SERVICE_ROLE_KEY, player
+              profiles import but login accounts are skipped.
+            </p>
             <div className="toolbar compact-toolbar">
-              <a className="button secondary" download="player-import-template.xlsx" href="/api/templates/player-import/xlsx/">
-                Download Excel template
-              </a>
-              <a className="button secondary" download="player-import-template.csv" href="/api/templates/player-import/csv/">
-                Download CSV template
-              </a>
+              <button
+                className="button secondary"
+                disabled={Boolean(downloadingTemplate)}
+                onClick={() => downloadTemplate("player-import-template.xlsx", "/player-import-template.xlsx")}
+                type="button"
+              >
+                {downloadingTemplate === "player-import-template.xlsx" ? "Downloading..." : "Download Excel template"}
+              </button>
+              <button
+                className="button secondary"
+                disabled={Boolean(downloadingTemplate)}
+                onClick={() => downloadTemplate("player-import-template.csv", "/player-import-template.csv")}
+                type="button"
+              >
+                {downloadingTemplate === "player-import-template.csv" ? "Downloading..." : "Download CSV template"}
+              </button>
             </div>
             <label className="file-drop">
               <Upload size={22} aria-hidden />
@@ -2344,6 +2405,10 @@ function parseCsvLine(line: string) {
 function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
   const message = (error?.message || "").toLowerCase();
   return message.includes("access_disabled") || message.includes("schema cache");
+}
+
+function isServiceRoleMissing(error: string | null | undefined) {
+  return (error || "").toLowerCase().includes("supabase_service_role_key");
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, timeout: string): Promise<T | { timeout: string }> {
