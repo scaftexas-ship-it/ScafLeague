@@ -1304,7 +1304,7 @@ export function AdminWorkspace() {
     setMessage(
       savedOptionalColumns
         ? `Generated ${created.length} ${scheduleLabel} match${created.length === 1 ? "" : "es"} to ${targetScore} points.${replacementNote}`
-        : `Generated ${created.length} match${created.length === 1 ? "" : "es"} with default saved fields. Run supabase/add-match-target-score.sql and supabase/add-match-round-label.sql for custom points and bracket labels.`
+        : `Generated ${created.length} match${created.length === 1 ? "" : "es"} with default saved fields. Run supabase/add-match-scheduler-options.sql for custom points, bracket labels, and schedule options.`
     );
   }
 
