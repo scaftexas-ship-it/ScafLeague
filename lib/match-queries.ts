@@ -1,5 +1,5 @@
 export const matchSelectBasic =
-  "id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status";
+  "id, division_id, round, entry_a_id, entry_b_id, schedule_week_start, schedule_week_end, extension_week_start, extension_week_end, status, winner_entry_id, forfeit_by_entry_id";
 
 export const matchSelectWithRoundLabel = `${matchSelectBasic}, round_label`;
 export const matchSelectWithTargetScore = `${matchSelectWithRoundLabel}, target_score, number_of_sets, restrict_score_updates, score_update_before_days, score_update_after_days, allow_forfeit, forfeit_before_days, forfeit_after_days`;

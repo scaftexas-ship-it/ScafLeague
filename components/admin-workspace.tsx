@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarPlus, Check, Plus, Shuffle, Trophy, Upload, UserPlus, UsersRound } from "lucide-react";
+import { CalendarPlus, Check, Plus, Settings, Shuffle, Trophy, Upload, UserPlus, UsersRound, Wrench } from "lucide-react";
 import { addDays, generateEliminatorSchedule, generateRoundRobinSchedule } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
@@ -38,6 +38,7 @@ type PlayerProfileRow = {
   id: string;
   club_id: string;
   display_name: string;
+  mobile_number?: string | null;
   rating: string | null;
   user_id: string | null;
 };
@@ -57,6 +58,7 @@ type PeopleImportRow = {
   password?: string;
   role: "admin" | "player";
   rating?: string;
+  mobileNumber?: string;
   createPlayerProfile: boolean;
 };
 
@@ -86,6 +88,8 @@ type MatchRow = {
   extension_week_start: string;
   extension_week_end: string;
   status: MatchStatus;
+  winner_entry_id?: string | null;
+  forfeit_by_entry_id?: string | null;
   target_score?: number | null;
   number_of_sets?: number | null;
   restrict_score_updates?: boolean | null;
@@ -96,17 +100,27 @@ type MatchRow = {
   forfeit_after_days?: number | null;
 };
 
+type MatchSetRow = {
+  match_id: string;
+  set_number: number;
+  entry_a_score: number;
+  entry_b_score: number;
+};
+
 type ManualMatchRow = {
   id: string;
   entryASelectionId: string;
   entryBSelectionId: string;
 };
 
+type AdminSection = "players" | "teams" | "tournaments" | "admin" | "settings";
+
 const today = new Date().toISOString().slice(0, 10);
 
 export function AdminWorkspace() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [activeSection, setActiveSection] = useState<AdminSection>("players");
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [tournaments, setTournaments] = useState<TournamentRow[]>([]);
   const [selectedTournamentId, setSelectedTournamentId] = useState("");
@@ -116,6 +130,7 @@ export function AdminWorkspace() {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [divisionEntries, setDivisionEntries] = useState<DivisionEntryRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [matchSets, setMatchSets] = useState<MatchSetRow[]>([]);
   const [selectedSinglesDivisionId, setSelectedSinglesDivisionId] = useState("");
   const [selectedDoublesDivisionId, setSelectedDoublesDivisionId] = useState("");
   const [selectedScheduleDivisionId, setSelectedScheduleDivisionId] = useState("");
@@ -152,8 +167,10 @@ export function AdminWorkspace() {
   const [invitingUser, setInvitingUser] = useState(false);
   const [linkingUser, setLinkingUser] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState("");
+  const [editingMatchId, setEditingMatchId] = useState("");
   const [importingPlayers, setImportingPlayers] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState("");
+  const [serviceRoleConfigured, setServiceRoleConfigured] = useState<boolean | null>(null);
   const [assigningEntry, setAssigningEntry] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [creatingScheduleTeam, setCreatingScheduleTeam] = useState(false);
@@ -170,11 +187,13 @@ export function AdminWorkspace() {
   });
   const [playerForm, setPlayerForm] = useState({
     displayName: "",
+    mobileNumber: "",
     rating: ""
   });
   const [inviteForm, setInviteForm] = useState({
     fullName: "",
     email: "",
+    mobileNumber: "",
     password: "",
     role: "player" as "admin" | "player",
     rating: "",
@@ -380,11 +399,22 @@ export function AdminWorkspace() {
     }
 
     setAdminUser(loadedAdmin);
+    void loadAdminConfig();
     await Promise.all([loadPlayers(loadedAdmin.club_id), loadAppUsers(loadedAdmin.club_id), loadTeams(loadedAdmin.club_id)]);
     const loadedTournaments = await loadTournaments(loadedAdmin.club_id);
     setSelectedTournamentId((current) => current || loadedTournaments[0]?.id || "");
     setMessage(loadedTournaments.length > 0 ? "Admin access ready." : "Admin access ready. Create your first tournament.");
     setLoading(false);
+  }
+
+  async function loadAdminConfig() {
+    try {
+      const response = await fetch("/api/admin/config/");
+      const result = (await response.json()) as { serviceRoleConfigured?: boolean };
+      setServiceRoleConfigured(Boolean(result.serviceRoleConfigured));
+    } catch {
+      setServiceRoleConfigured(false);
+    }
   }
 
   async function loadTournaments(clubId: string) {
@@ -426,18 +456,28 @@ export function AdminWorkspace() {
 
   async function loadPlayers(clubId: string) {
     if (!supabase) return [];
-    const { data, error } = await supabase
+    let result = await supabase
       .from("player_profiles")
-      .select("id, club_id, display_name, rating, user_id")
+      .select("id, club_id, display_name, mobile_number, rating, user_id")
       .eq("club_id", clubId)
       .order("display_name", { ascending: true });
+    let rows = (result.data || []) as PlayerProfileRow[];
+    let error = result.error;
+    if (error && isMissingMobileNumberColumn(error)) {
+      const fallbackResult = await supabase
+        .from("player_profiles")
+        .select("id, club_id, display_name, rating, user_id")
+        .eq("club_id", clubId)
+        .order("display_name", { ascending: true });
+      rows = (fallbackResult.data || []) as PlayerProfileRow[];
+      error = fallbackResult.error;
+    }
 
     if (error) {
       setMessage(error.message);
       return [];
     }
 
-    const rows = (data || []) as PlayerProfileRow[];
     setPlayers(rows);
     return rows;
   }
@@ -520,6 +560,7 @@ export function AdminWorkspace() {
   async function loadMatches(divisionIds: string[]) {
     if (!supabase || divisionIds.length === 0) {
       setMatches([]);
+      setMatchSets([]);
       return [];
     }
 
@@ -560,11 +601,35 @@ export function AdminWorkspace() {
         forfeit_after_days: 0
       }));
       setMatches(fallbackRows);
+      await loadMatchSets(fallbackRows.map((match) => match.id));
       return fallbackRows;
     }
 
     const rows = (data || []) as MatchRow[];
     setMatches(rows);
+    await loadMatchSets(rows.map((match) => match.id));
+    return rows;
+  }
+
+  async function loadMatchSets(matchIds: string[]) {
+    if (!supabase || matchIds.length === 0) {
+      setMatchSets([]);
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("match_sets")
+      .select("match_id, set_number, entry_a_score, entry_b_score")
+      .in("match_id", matchIds)
+      .order("set_number", { ascending: true });
+
+    if (error) {
+      setMessage(error.message);
+      return [];
+    }
+
+    const rows = (data || []) as MatchSetRow[];
+    setMatchSets(rows);
     return rows;
   }
 
@@ -650,19 +715,42 @@ export function AdminWorkspace() {
       .insert({
         club_id: adminUser.club_id,
         display_name: displayName,
+        mobile_number: playerForm.mobileNumber.trim() || null,
         rating: playerForm.rating.trim() || null
       })
-      .select("id, club_id, display_name, rating, user_id")
+      .select("id, club_id, display_name, mobile_number, rating, user_id")
       .single();
 
     setSavingPlayer(false);
     if (error) {
-      setMessage(error.message);
+      if (!isMissingMobileNumberColumn(error)) {
+        setMessage(error.message);
+        return;
+      }
+
+      const fallback = await supabase
+        .from("player_profiles")
+        .insert({
+          club_id: adminUser.club_id,
+          display_name: displayName,
+          rating: playerForm.rating.trim() || null
+        })
+        .select("id, club_id, display_name, rating, user_id")
+        .single();
+
+      if (fallback.error) {
+        setMessage(fallback.error.message);
+        return;
+      }
+
+      setPlayers((current) => [...current, fallback.data as PlayerProfileRow].sort((a, b) => a.display_name.localeCompare(b.display_name)));
+      setPlayerForm({ displayName: "", mobileNumber: "", rating: "" });
+      setMessage("Player added. Run supabase/add-player-mobile-number.sql to save mobile numbers.");
       return;
     }
 
     setPlayers((current) => [...current, data as PlayerProfileRow].sort((a, b) => a.display_name.localeCompare(b.display_name)));
-    setPlayerForm({ displayName: "", rating: "" });
+    setPlayerForm({ displayName: "", mobileNumber: "", rating: "" });
     setMessage("Player added.");
   }
 
@@ -705,6 +793,7 @@ export function AdminWorkspace() {
         fullName,
         password: password || undefined,
         role: inviteForm.role,
+        mobileNumber: inviteForm.mobileNumber,
         rating: inviteForm.rating,
         createPlayerProfile: inviteForm.role === "player" && inviteForm.playerProfileMode === "__new",
         playerProfileId: inviteForm.playerProfileMode && inviteForm.playerProfileMode !== "__new" ? inviteForm.playerProfileMode : undefined
@@ -718,7 +807,7 @@ export function AdminWorkspace() {
       return;
     }
 
-    setInviteForm({ fullName: "", email: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
+    setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
     await Promise.all([loadAppUsers(adminUser.club_id), loadPlayers(adminUser.club_id)]);
     setMessage(password ? `Login created for ${email}.` : `Login invite sent to ${email}.`);
   }
@@ -807,7 +896,7 @@ export function AdminWorkspace() {
 
     if (rows.length === 0) {
       setImportingPlayers(false);
-      setMessage("No people found. Use columns: full_name, email, role, password, rating.");
+      setMessage("No people found. Use columns: full_name, email, mobile_number, role, password, rating.");
       event.target.value = "";
       return;
     }
@@ -839,6 +928,7 @@ export function AdminWorkspace() {
           fullName: row.fullName,
           password: row.password || undefined,
           role: row.role,
+          mobileNumber: row.mobileNumber,
           rating: row.rating,
           createPlayerProfile: row.createPlayerProfile
         })
@@ -852,9 +942,21 @@ export function AdminWorkspace() {
           const { error: profileError } = await supabase.from("player_profiles").insert({
             club_id: adminUser.club_id,
             display_name: row.fullName,
+            mobile_number: row.mobileNumber || null,
             rating: row.rating || null
           });
-          if (profileError) {
+          if (profileError && isMissingMobileNumberColumn(profileError)) {
+            const fallback = await supabase.from("player_profiles").insert({
+              club_id: adminUser.club_id,
+              display_name: row.fullName,
+              rating: row.rating || null
+            });
+            if (fallback.error) {
+              errors.push(`${row.email}: ${fallback.error.message}`);
+            } else {
+              profilesOnly += 1;
+            }
+          } else if (profileError) {
             errors.push(`${row.email}: ${profileError.message}`);
           } else {
             profilesOnly += 1;
@@ -1005,6 +1107,58 @@ export function AdminWorkspace() {
     setDivisionEntries((current) => [...current, entry as DivisionEntryRow].sort((a, b) => a.label.localeCompare(b.label)));
     setTeamForm({ name: "", playerAId: "", playerBId: "" });
     setMessage(`${teamName} created and assigned to ${selectedDoublesDivision.name}.`);
+  }
+
+  async function createStandaloneTeam(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !adminUser) return;
+
+    if (!teamForm.playerAId || !teamForm.playerBId || teamForm.playerAId === teamForm.playerBId) {
+      setMessage("Choose two different players for a doubles team.");
+      return;
+    }
+
+    const playerA = players.find((player) => player.id === teamForm.playerAId);
+    const playerB = players.find((player) => player.id === teamForm.playerBId);
+    if (!playerA || !playerB) return;
+
+    const teamName = teamForm.name.trim() || `${playerA.display_name} / ${playerB.display_name}`;
+    if (teams.some((team) => team.name.toLowerCase() === teamName.toLowerCase())) {
+      setMessage(`${teamName} already exists.`);
+      return;
+    }
+
+    setCreatingTeam(true);
+    setMessage("");
+    const { data: team, error: teamError } = await supabase
+      .from("teams")
+      .insert({
+        club_id: adminUser.club_id,
+        name: teamName
+      })
+      .select("id, club_id, name")
+      .single();
+
+    if (teamError || !team) {
+      setCreatingTeam(false);
+      setMessage(teamError?.message || "Could not create team.");
+      return;
+    }
+
+    const { error: membersError } = await supabase.from("team_members").insert([
+      { team_id: team.id, player_id: playerA.id },
+      { team_id: team.id, player_id: playerB.id }
+    ]);
+
+    setCreatingTeam(false);
+    if (membersError) {
+      setMessage(membersError.message);
+      return;
+    }
+
+    setTeams((current) => [...current, team as TeamRow].sort((a, b) => a.name.localeCompare(b.name)));
+    setTeamForm({ name: "", playerAId: "", playerBId: "" });
+    setMessage(`${teamName} created.`);
   }
 
   async function createScheduleTeam() {
@@ -1365,6 +1519,86 @@ export function AdminWorkspace() {
     setMessage("Standings are live. Leaderboards are calculated from completed matches, forfeits, and cancellations.");
   }
 
+  async function saveAdminMatch(match: MatchRow, form: AdminMatchEditForm) {
+    if (!supabase) return;
+
+    const nextStatus = form.status;
+    const shouldSaveScores = nextStatus === "completed" || nextStatus === "score_submitted";
+    const nextSets = shouldSaveScores ? buildAdminSets(form) : [];
+    const winnerEntryId = shouldSaveScores ? getAdminWinnerEntryId(match, nextSets) : nextStatus === "forfeit" ? form.winnerEntryId : null;
+
+    if (shouldSaveScores && !winnerEntryId) {
+      setMessage("Enter a valid score with a clear winner.");
+      return;
+    }
+    if (nextStatus === "forfeit" && !winnerEntryId) {
+      setMessage("Choose the forfeit winner.");
+      return;
+    }
+
+    setEditingMatchId(match.id);
+    setMessage("");
+
+    const { error: deleteSetsError } = await supabase.from("match_sets").delete().eq("match_id", match.id);
+    if (deleteSetsError) {
+      setEditingMatchId("");
+      setMessage(deleteSetsError.message);
+      return;
+    }
+
+    if (nextSets.length > 0) {
+      const { error: insertSetsError } = await supabase.from("match_sets").insert(
+        nextSets.map((set) => ({
+          match_id: match.id,
+          set_number: set.setNumber,
+          entry_a_score: set.entryAScore,
+          entry_b_score: set.entryBScore
+        }))
+      );
+
+      if (insertSetsError) {
+        setEditingMatchId("");
+        setMessage(insertSetsError.message);
+        return;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("matches")
+      .update({
+        round_label: form.roundLabel.trim() || null,
+        target_score: Number(form.targetScore) || match.target_score || 11,
+        schedule_week_start: form.scheduleWeekStart,
+        schedule_week_end: form.scheduleWeekEnd,
+        extension_week_start: form.extensionWeekStart,
+        extension_week_end: form.extensionWeekEnd,
+        status: nextStatus,
+        winner_entry_id: winnerEntryId,
+        forfeit_by_entry_id: nextStatus === "forfeit" ? winnerEntryId : null
+      })
+      .eq("id", match.id)
+      .select(matchSelectWithTargetScore)
+      .single();
+
+    setEditingMatchId("");
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMatches((current) => current.map((item) => (item.id === match.id ? (data as MatchRow) : item)));
+    setMatchSets((current) => [
+      ...current.filter((set) => set.match_id !== match.id),
+      ...nextSets.map((set) => ({
+        match_id: match.id,
+        set_number: set.setNumber,
+        entry_a_score: set.entryAScore,
+        entry_b_score: set.entryBScore
+      }))
+    ]);
+    setMessage("Match updated.");
+  }
+
   if (loading || !adminUser) {
     return (
       <section className="hero">
@@ -1394,8 +1628,50 @@ export function AdminWorkspace() {
   }
 
   return (
-    <>
-      <section className="hero">
+    <section className="admin-console">
+      <aside className="admin-sidebar" aria-label="Admin sections">
+        <button className={`admin-nav-item ${activeSection === "players" ? "active" : ""}`} onClick={() => setActiveSection("players")} type="button">
+          <UserPlus size={22} aria-hidden />
+          <span>Players</span>
+        </button>
+        <button className={`admin-nav-item ${activeSection === "teams" ? "active" : ""}`} onClick={() => setActiveSection("teams")} type="button">
+          <UsersRound size={22} aria-hidden />
+          <span>Teams</span>
+        </button>
+        <button
+          className={`admin-nav-item ${activeSection === "tournaments" ? "active" : ""}`}
+          onClick={() => setActiveSection("tournaments")}
+          type="button"
+        >
+          <Trophy size={22} aria-hidden />
+          <span>Tournaments</span>
+        </button>
+        <button className={`admin-nav-item ${activeSection === "admin" ? "active" : ""}`} onClick={() => setActiveSection("admin")} type="button">
+          <Wrench size={22} aria-hidden />
+          <span>Admin Tools</span>
+        </button>
+        <button className={`admin-nav-item ${activeSection === "settings" ? "active" : ""}`} onClick={() => setActiveSection("settings")} type="button">
+          <Settings size={22} aria-hidden />
+          <span>Settings</span>
+        </button>
+      </aside>
+
+      <div className="admin-content">
+        <section className="admin-page-heading">
+          <div>
+            <p className="eyebrow">Admin workspace</p>
+            <h1>{getAdminSectionTitle(activeSection)}</h1>
+            <p className="hero-copy">{getAdminSectionDescription(activeSection)}</p>
+          </div>
+          {message ? (
+            <p className="subtle admin-status" data-testid="admin-status" role="status">
+              {message}
+            </p>
+          ) : null}
+        </section>
+
+      {activeSection === "tournaments" ? (
+      <section className="admin-pane grid two">
         <div className="schedule-shell tournament-shell">
           <form className="schedule-builder" onSubmit={createTournament}>
             <p className="eyebrow">Step 1</p>
@@ -1468,11 +1744,6 @@ export function AdminWorkspace() {
               <CalendarPlus size={18} aria-hidden />
               {savingTournament ? "Saving..." : "Save Tournament"}
             </button>
-            {message ? (
-              <p className="subtle" data-testid="admin-status" role="status">
-                {message}
-              </p>
-            ) : null}
           </form>
         </div>
         <div className="schedule-shell">
@@ -2033,8 +2304,10 @@ export function AdminWorkspace() {
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section className="card" style={{ marginTop: 14 }}>
+      {activeSection === "players" ? (
+      <section className="card admin-pane">
         <div className="section-title">
           <h2>People</h2>
           <UserPlus size={22} aria-hidden />
@@ -2060,6 +2333,16 @@ export function AdminWorkspace() {
                 placeholder="name@email.com"
                 required
                 value={inviteForm.email}
+              />
+            </label>
+            <label className="field">
+              <span>Mobile number</span>
+              <input
+                autoComplete="tel"
+                inputMode="tel"
+                onChange={(event) => setInviteForm((current) => ({ ...current, mobileNumber: event.target.value }))}
+                placeholder="15551234567"
+                value={inviteForm.mobileNumber}
               />
             </label>
             <label className="field">
@@ -2124,7 +2407,7 @@ export function AdminWorkspace() {
           <div className="form-grid">
             <h3>Upload People</h3>
             <p className="subtle">
-              Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, role, password, rating. Without SUPABASE_SERVICE_ROLE_KEY, player
+              Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, mobile_number, role, password, rating. Without SUPABASE_SERVICE_ROLE_KEY, player
               profiles import but login accounts are skipped.
             </p>
             <div className="toolbar compact-toolbar">
@@ -2204,6 +2487,7 @@ export function AdminWorkspace() {
                         <strong>{user.full_name}</strong>
                         <p className="subtle">{user.email}</p>
                         <p className="subtle">{linkedPlayer ? `Player: ${linkedPlayer.display_name}` : "No linked player profile"}</p>
+                        {linkedPlayer?.mobile_number ? <p className="subtle">Mobile: {linkedPlayer.mobile_number}</p> : null}
                       </div>
                       <select
                         aria-label={`Role for ${user.full_name}`}
@@ -2227,39 +2511,42 @@ export function AdminWorkspace() {
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section className="card" style={{ marginTop: 14 }}>
+      {activeSection === "admin" ? (
+      <section className="card admin-pane">
         <div className="section-title">
           <h2>Match Management</h2>
           <span className="pill orange">admin editable</span>
         </div>
         {matches.length > 0 ? (
-          <div className="match-list">
+          <div className="admin-match-table" role="table" aria-label="Editable matches">
+            <div className="admin-match-table-head" role="row">
+              <span role="columnheader">Schedule</span>
+              <span role="columnheader">Match</span>
+              <span role="columnheader">Round</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Score / winner</span>
+              <span role="columnheader">Dates</span>
+              <span role="columnheader">Target</span>
+              <span role="columnheader">Action</span>
+            </div>
             {matches.map((match) => {
               const division = divisions.find((item) => item.id === match.division_id);
               const entryA = divisionEntries.find((entry) => entry.id === match.entry_a_id);
               const entryB = divisionEntries.find((entry) => entry.id === match.entry_b_id);
 
               return (
-                <article className="match-card" key={match.id}>
-                  <div className="match-meta">
-                    <span className="pill blue">{division?.name || "Division"}</span>
-                    <span className="pill">{match.round_label || `Round ${match.round}`}</span>
-                    <span className="pill">To {match.target_score || 11}</span>
-                    <span className="pill">{match.number_of_sets || 3} sets</span>
-                  </div>
-                  <div className="versus">
-                    <span>{entryA?.label || "Entry A"}</span>
-                    <span className="subtle">vs</span>
-                    <span>{entryB?.label || "Entry B"}</span>
-                  </div>
-                  <div className="score-line">
-                    <span className="subtle">
-                      {match.schedule_week_start} to {match.extension_week_end}
-                    </span>
-                    <span className="pill orange">{match.status.replace("_", " ")}</span>
-                  </div>
-                </article>
+                <AdminMatchEditor
+                  division={division}
+                  entryA={entryA}
+                  entryB={entryB}
+                  key={match.id}
+                  match={match}
+                  onSave={saveAdminMatch}
+                  saving={editingMatchId === match.id}
+                  sets={matchSets.filter((set) => set.match_id === match.id)}
+                />
               );
             })}
           </div>
@@ -2271,8 +2558,311 @@ export function AdminWorkspace() {
           />
         )}
       </section>
-    </>
+      ) : null}
+
+      {activeSection === "teams" ? (
+        <section className="grid two admin-pane">
+          <div className="card">
+            <div className="section-title">
+              <h2>Create Fixed Doubles Team</h2>
+              <UsersRound size={22} aria-hidden />
+            </div>
+            <form className="form-grid" onSubmit={createStandaloneTeam}>
+              <label className="field">
+                <span>Team name</span>
+                <input
+                  onChange={(event) => setTeamForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Optional"
+                  value={teamForm.name}
+                />
+              </label>
+              <label className="field">
+                <span>Player 1</span>
+                <select
+                  disabled={players.length === 0}
+                  onChange={(event) => setTeamForm((current) => ({ ...current, playerAId: event.target.value }))}
+                  value={teamForm.playerAId}
+                >
+                  <option value="">Select player</option>
+                  {players.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Player 2</span>
+                <select
+                  disabled={players.length === 0}
+                  onChange={(event) => setTeamForm((current) => ({ ...current, playerBId: event.target.value }))}
+                  value={teamForm.playerBId}
+                >
+                  <option value="">Select player</option>
+                  {players.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="button" disabled={creatingTeam || !teamForm.playerAId || !teamForm.playerBId} type="submit">
+                <UsersRound size={18} aria-hidden />
+                {creatingTeam ? "Creating..." : "Create team"}
+              </button>
+            </form>
+          </div>
+          <div className="card">
+            <div className="section-title">
+              <h2>Teams</h2>
+              <span className="pill blue">{teams.length}</span>
+            </div>
+            {teams.length > 0 ? (
+              <div className="compact-list">
+                {teams.map((team) => (
+                  <div className="compact-row" key={team.id}>
+                    <strong>{team.name}</strong>
+                    <span className="subtle">Fixed doubles</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={<UsersRound size={24} aria-hidden />} title="No teams yet" body="Create fixed doubles teams here or while generating a doubles schedule." />
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {activeSection === "settings" ? (
+        <section className="grid two admin-pane">
+          <div className="card">
+            <div className="section-title">
+              <h2>App Settings</h2>
+              <Settings size={22} aria-hidden />
+            </div>
+            <div className="compact-list">
+              <div className="compact-row">
+                <strong>Club admin</strong>
+                <span className="subtle">{adminUser.full_name}</span>
+              </div>
+              <div className="compact-row">
+                <strong>Login</strong>
+                <span className="subtle">{adminUser.email}</span>
+              </div>
+              <div className="compact-row">
+                <strong>Tournaments</strong>
+                <span className="subtle">{tournaments.length}</span>
+              </div>
+              <div className="compact-row">
+                <strong>Players</strong>
+                <span className="subtle">{players.length}</span>
+              </div>
+            </div>
+          </div>
+          <div className="card notice">
+            <h2>Import Setup</h2>
+            <p className="subtle">
+              {serviceRoleConfigured === null
+                ? "Checking bulk login configuration..."
+                : serviceRoleConfigured
+                ? "Bulk login creation is enabled. Uploads can create login accounts and player profiles."
+                : "Bulk login creation needs SUPABASE_SERVICE_ROLE_KEY in .env.local. Player profiles can still import without it."}
+            </p>
+          </div>
+        </section>
+      ) : null}
+      </div>
+    </section>
   );
+}
+
+type AdminMatchEditForm = {
+  roundLabel: string;
+  targetScore: string;
+  scheduleWeekStart: string;
+  scheduleWeekEnd: string;
+  extensionWeekStart: string;
+  extensionWeekEnd: string;
+  status: MatchStatus;
+  winnerEntryId: string;
+  set1A: string;
+  set1B: string;
+  set2A: string;
+  set2B: string;
+  set3A: string;
+  set3B: string;
+};
+
+function AdminMatchEditor({
+  division,
+  entryA,
+  entryB,
+  match,
+  onSave,
+  saving,
+  sets
+}: {
+  division?: DivisionRow;
+  entryA?: DivisionEntryRow;
+  entryB?: DivisionEntryRow;
+  match: MatchRow;
+  onSave: (match: MatchRow, form: AdminMatchEditForm) => Promise<void>;
+  saving: boolean;
+  sets: MatchSetRow[];
+}) {
+  const initialForm = createAdminMatchForm(match, sets);
+  const [form, setForm] = useState<AdminMatchEditForm>(initialForm);
+  const showScores = form.status === "completed" || form.status === "score_submitted";
+  const showWinner = form.status === "forfeit";
+  const setsKey = sets.map((set) => `${set.set_number}:${set.entry_a_score}-${set.entry_b_score}`).join("|");
+
+  useEffect(() => {
+    setForm(createAdminMatchForm(match, sets));
+  }, [match.id, match.status, match.winner_entry_id, match.forfeit_by_entry_id, setsKey]);
+
+  function updateField(field: keyof AdminMatchEditForm, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSave(match, form);
+  }
+
+  return (
+    <form className="admin-match-table-row" onSubmit={handleSubmit} role="row">
+      <div className="admin-match-cell" role="cell">
+        <span className="mobile-cell-label">Schedule</span>
+        <strong>{division?.name || "Division"}</strong>
+        <span className="subtle">{match.round_label || `Round ${match.round}`}</span>
+      </div>
+      <div className="admin-match-cell match-cell" role="cell">
+        <span className="mobile-cell-label">Match</span>
+        <strong>{entryA?.label || "Entry A"}</strong>
+        <span className="subtle">vs</span>
+        <strong>{entryB?.label || "Entry B"}</strong>
+      </div>
+      <label className="admin-match-cell" role="cell">
+        <span className="mobile-cell-label">Round</span>
+        <input aria-label="Round label" onChange={(event) => updateField("roundLabel", event.target.value)} value={form.roundLabel} />
+      </label>
+      <label className="admin-match-cell" role="cell">
+        <span className="mobile-cell-label">Status</span>
+        <select aria-label="Match status" onChange={(event) => updateField("status", event.target.value as MatchStatus)} value={form.status}>
+          <option value="scheduled">Scheduled</option>
+          <option value="completed">Completed</option>
+          <option value="score_submitted">Score submitted</option>
+          <option value="forfeit">Forfeit</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>
+      <div className="admin-match-cell score-cell" role="cell">
+        <span className="mobile-cell-label">Score / winner</span>
+        {showWinner ? (
+          <select aria-label="Forfeit winner" onChange={(event) => updateField("winnerEntryId", event.target.value)} value={form.winnerEntryId}>
+            <option value="">Select winner</option>
+            <option value={match.entry_a_id}>{entryA?.label || "Entry A"}</option>
+            <option value={match.entry_b_id}>{entryB?.label || "Entry B"}</option>
+          </select>
+        ) : null}
+        {showScores ? (
+          <div className="admin-inline-score-grid">
+            <span />
+            <strong>1</strong>
+            <strong>2</strong>
+            <strong>3</strong>
+            <span>A</span>
+            <input aria-label="Entry A set 1" min="0" onChange={(event) => updateField("set1A", event.target.value)} required type="number" value={form.set1A} />
+            <input aria-label="Entry A set 2" min="0" onChange={(event) => updateField("set2A", event.target.value)} required type="number" value={form.set2A} />
+            <input aria-label="Entry A set 3" min="0" onChange={(event) => updateField("set3A", event.target.value)} type="number" value={form.set3A} />
+            <span>B</span>
+            <input aria-label="Entry B set 1" min="0" onChange={(event) => updateField("set1B", event.target.value)} required type="number" value={form.set1B} />
+            <input aria-label="Entry B set 2" min="0" onChange={(event) => updateField("set2B", event.target.value)} required type="number" value={form.set2B} />
+            <input aria-label="Entry B set 3" min="0" onChange={(event) => updateField("set3B", event.target.value)} type="number" value={form.set3B} />
+          </div>
+        ) : null}
+        {!showWinner && !showScores ? <span className="subtle">No score</span> : null}
+      </div>
+      <div className="admin-match-cell date-cell" role="cell">
+        <span className="mobile-cell-label">Dates</span>
+        <label>
+          <span>Schedule</span>
+          <input aria-label="Schedule start" onChange={(event) => updateField("scheduleWeekStart", event.target.value)} type="date" value={form.scheduleWeekStart} />
+          <input aria-label="Schedule end" onChange={(event) => updateField("scheduleWeekEnd", event.target.value)} type="date" value={form.scheduleWeekEnd} />
+        </label>
+        <label>
+          <span>Extension</span>
+          <input aria-label="Extension start" onChange={(event) => updateField("extensionWeekStart", event.target.value)} type="date" value={form.extensionWeekStart} />
+          <input aria-label="Extension end" onChange={(event) => updateField("extensionWeekEnd", event.target.value)} type="date" value={form.extensionWeekEnd} />
+        </label>
+      </div>
+      <label className="admin-match-cell target-cell" role="cell">
+        <span className="mobile-cell-label">Target</span>
+        <input aria-label="Target score" min="1" onChange={(event) => updateField("targetScore", event.target.value)} type="number" value={form.targetScore} />
+      </label>
+      <div className="admin-match-cell action-cell" role="cell">
+        <span className="mobile-cell-label">Action</span>
+        <button className="button" disabled={saving} type="submit">
+          <Check size={18} aria-hidden />
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function createAdminMatchForm(match: MatchRow, sets: MatchSetRow[]): AdminMatchEditForm {
+  const setMap = new Map(sets.map((set) => [set.set_number, set]));
+  const targetScore = String(match.target_score || 11);
+  return {
+    roundLabel: match.round_label || "",
+    targetScore,
+    scheduleWeekStart: match.schedule_week_start,
+    scheduleWeekEnd: match.schedule_week_end,
+    extensionWeekStart: match.extension_week_start,
+    extensionWeekEnd: match.extension_week_end,
+    status: match.status,
+    winnerEntryId: match.winner_entry_id || match.forfeit_by_entry_id || "",
+    set1A: String(setMap.get(1)?.entry_a_score ?? targetScore),
+    set1B: String(setMap.get(1)?.entry_b_score ?? "0"),
+    set2A: String(setMap.get(2)?.entry_a_score ?? targetScore),
+    set2B: String(setMap.get(2)?.entry_b_score ?? "0"),
+    set3A: String(setMap.get(3)?.entry_a_score ?? ""),
+    set3B: String(setMap.get(3)?.entry_b_score ?? "")
+  };
+}
+
+function buildAdminSets(form: AdminMatchEditForm) {
+  const rawSets = [
+    [form.set1A, form.set1B],
+    [form.set2A, form.set2B],
+    [form.set3A, form.set3B]
+  ];
+
+  return rawSets.flatMap(([a, b], index) => {
+    if (a === "" && b === "") return [];
+    return [
+      {
+        setNumber: index + 1,
+        entryAScore: Number(a),
+        entryBScore: Number(b)
+      }
+    ];
+  });
+}
+
+function getAdminWinnerEntryId(match: MatchRow, sets: ReturnType<typeof buildAdminSets>) {
+  const wins = sets.reduce(
+    (acc, set) => {
+      if (set.entryAScore > set.entryBScore) acc.a += 1;
+      if (set.entryBScore > set.entryAScore) acc.b += 1;
+      return acc;
+    },
+    { a: 0, b: 0 }
+  );
+
+  if (wins.a === wins.b || Math.max(wins.a, wins.b) < 2) return undefined;
+  return wins.a > wins.b ? match.entry_a_id : match.entry_b_id;
 }
 
 function parsePlayerCsv(text: string, clubId: string) {
@@ -2303,6 +2893,22 @@ function parsePlayerCsv(text: string, clubId: string) {
       };
     })
     .filter((row): row is { club_id: string; display_name: string; rating: string | null } => Boolean(row));
+}
+
+function getAdminSectionTitle(section: AdminSection) {
+  if (section === "players") return "Players";
+  if (section === "teams") return "Teams";
+  if (section === "tournaments") return "Tournaments";
+  if (section === "admin") return "Admin Tools";
+  return "Settings";
+}
+
+function getAdminSectionDescription(section: AdminSection) {
+  if (section === "players") return "Create logins, import people, link players, and manage user access.";
+  if (section === "teams") return "Create and review fixed doubles teams for doubles schedules.";
+  if (section === "tournaments") return "Create tournaments, customize schedules, choose players, and generate matches.";
+  if (section === "admin") return "Review generated games, score status, forfeits, and match setup.";
+  return "Review app setup, admin identity, and import configuration.";
 }
 
 async function parsePeopleImportFile(file: File): Promise<PeopleImportRow[]> {
@@ -2349,6 +2955,7 @@ function normalizePeopleImportRow(rawRow: Record<string, unknown>): PeopleImport
   return {
     fullName,
     email,
+    mobileNumber: pickValue(row, ["mobile_number", "mobile", "phone", "phone_number", "cell", "cell_phone"]) || undefined,
     password: pickValue(row, ["password", "temporary_password", "temp_password"]) || undefined,
     role,
     rating: pickValue(row, ["rating", "skill_level", "level"]) || undefined,
@@ -2405,6 +3012,11 @@ function parseCsvLine(line: string) {
 function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
   const message = (error?.message || "").toLowerCase();
   return message.includes("access_disabled") || message.includes("schema cache");
+}
+
+function isMissingMobileNumberColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("mobile_number") || message.includes("schema cache");
 }
 
 function isServiceRoleMissing(error: string | null | undefined) {

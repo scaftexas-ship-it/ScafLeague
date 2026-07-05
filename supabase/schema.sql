@@ -27,6 +27,7 @@ create table public.player_profiles (
   user_id uuid unique references public.users(id) on delete cascade,
   club_id uuid not null references public.clubs(id) on delete cascade,
   display_name text not null,
+  mobile_number text,
   rating text,
   created_at timestamptz not null default now()
 );

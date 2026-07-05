@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ClipboardList, Flag, Medal, Send, Trophy } from "lucide-react";
+import { CalendarDays, Check, ClipboardList, Flag, Medal, MessageCircle, Send } from "lucide-react";
 import { addDays, canClaimForfeit } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
@@ -21,6 +21,7 @@ type AppUser = {
 type PlayerProfileRow = {
   id: string;
   display_name: string;
+  mobile_number?: string | null;
   rating: string | null;
   user_id: string | null;
 };
@@ -38,6 +39,11 @@ type DivisionEntryRow = {
   label: string;
   player_id: string | null;
   team_id: string | null;
+};
+
+type TeamMemberRow = {
+  team_id: string;
+  player_id: string;
 };
 
 type TournamentRow = {
@@ -86,9 +92,11 @@ export function PlayerWorkspace() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
-  const [profiles, setProfiles] = useState<PlayerProfileRow[]>([]);
+  const [, setProfiles] = useState<PlayerProfileRow[]>([]);
   const [divisions, setDivisions] = useState<DivisionRow[]>([]);
   const [entries, setEntries] = useState<DivisionEntryRow[]>([]);
+  const [allPlayers, setAllPlayers] = useState<PlayerProfileRow[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMemberRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [myEntryIds, setMyEntryIds] = useState<string[]>([]);
   const [dashboardTournament, setDashboardTournament] = useState<TournamentRow | null>(null);
@@ -97,15 +105,13 @@ export function PlayerWorkspace() {
   const [dashboardMatches, setDashboardMatches] = useState<MatchRow[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [message, setMessage] = useState("Loading player schedule...");
-  const [dashboardMessage, setDashboardMessage] = useState("Loading tournament games...");
+  const [, setDashboardMessage] = useState("Loading tournament games...");
 
   useEffect(() => {
     void loadPlayerSchedule();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const scheduledCount = matches.filter((match) => match.status === "scheduled").length;
-  const divisionCount = new Set(dashboardMatches.map((match) => match.division_id)).size;
   const pointsTables = useMemo(
     () =>
       dashboardDivisions
@@ -176,10 +182,40 @@ export function PlayerWorkspace() {
     await loadTournamentDashboard(currentUser.club_id);
 
     const profileResult = await withTimeout(
-      supabase.from("player_profiles").select("id, display_name, rating, user_id").eq("user_id", currentUser.id),
+      supabase.from("player_profiles").select("id, display_name, mobile_number, rating, user_id").eq("user_id", currentUser.id),
       6000,
       "The player profile lookup did not respond. Check player_profiles RLS policies."
     );
+    if (!("timeout" in profileResult) && profileResult.error && isMissingMobileNumberColumn(profileResult.error)) {
+      const fallbackProfileResult = await withTimeout(
+        supabase.from("player_profiles").select("id, display_name, rating, user_id").eq("user_id", currentUser.id),
+        6000,
+        "The player profile lookup did not respond. Check player_profiles RLS policies."
+      );
+      if ("timeout" in fallbackProfileResult) {
+        setMessage(fallbackProfileResult.timeout);
+        return;
+      }
+      if (fallbackProfileResult.error) {
+        setMessage(fallbackProfileResult.error.message);
+        return;
+      }
+      const playerProfiles = (fallbackProfileResult.data || []) as PlayerProfileRow[];
+      setProfiles(playerProfiles);
+
+      if (playerProfiles.length === 0 && currentUser.role !== "admin") {
+        setMessage("No player profile is linked to this login yet. Tournament games are still visible below.");
+        return;
+      }
+
+      if (currentUser.role === "admin" && playerProfiles.length === 0) {
+        await loadAdminPreview(currentUser);
+        return;
+      }
+
+      await loadMatchesForProfiles(playerProfiles, currentUser.club_id);
+      return;
+    }
     if ("timeout" in profileResult) {
       setMessage(profileResult.timeout);
       return;
@@ -204,7 +240,7 @@ export function PlayerWorkspace() {
       return;
     }
 
-    await loadMatchesForProfiles(playerProfiles);
+    await loadMatchesForProfiles(playerProfiles, currentUser.club_id);
   }
 
   async function loadTournamentDashboard(clubId: string) {
@@ -259,6 +295,8 @@ export function PlayerWorkspace() {
       setDashboardMessage(entryError.message);
       return;
     }
+
+    await loadContactDirectory(clubId, (entryRows || []) as DivisionEntryRow[]);
 
     const { data: standingRows, error: standingError } = await supabase
       .from("standings")
@@ -339,10 +377,10 @@ export function PlayerWorkspace() {
 
     const loadedDivisions = (divisionRows || []) as DivisionRow[];
     const divisionIds = loadedDivisions.map((division) => division.id);
-    await loadMatchesForDivisionIds(divisionIds, [], "Admin preview: showing all scheduled tournament matches.");
+    await loadMatchesForDivisionIds(divisionIds, [], "Admin preview: showing all scheduled tournament matches.", currentUser.club_id);
   }
 
-  async function loadMatchesForProfiles(playerProfiles: PlayerProfileRow[]) {
+  async function loadMatchesForProfiles(playerProfiles: PlayerProfileRow[], clubId: string) {
     if (!supabase) return;
 
     const profileIds = playerProfiles.map((profile) => profile.id);
@@ -388,10 +426,10 @@ export function PlayerWorkspace() {
     }
 
     const divisionIds = Array.from(new Set(playerEntries.map((entry) => entry.division_id)));
-    await loadMatchesForDivisionIds(divisionIds, entryIds, "Player schedule loaded.");
+    await loadMatchesForDivisionIds(divisionIds, entryIds, "Player schedule loaded.", clubId);
   }
 
-  async function loadMatchesForDivisionIds(divisionIds: string[], entryIds: string[], successMessage: string) {
+  async function loadMatchesForDivisionIds(divisionIds: string[], entryIds: string[], successMessage: string, clubId?: string) {
     if (!supabase || divisionIds.length === 0) {
       setMessage("No divisions are ready yet.");
       return;
@@ -448,6 +486,7 @@ export function PlayerWorkspace() {
 
       setDivisions((divisionRows || []) as DivisionRow[]);
       setEntries((entryRows || []) as DivisionEntryRow[]);
+      if (clubId) await loadContactDirectory(clubId, (entryRows || []) as DivisionEntryRow[]);
       setMatches(visibleMatches);
       setMessage(visibleMatches.length > 0 ? successMessage : "No scheduled matches found yet.");
       return;
@@ -459,8 +498,38 @@ export function PlayerWorkspace() {
 
     setDivisions((divisionRows || []) as DivisionRow[]);
     setEntries((entryRows || []) as DivisionEntryRow[]);
+    if (clubId) await loadContactDirectory(clubId, (entryRows || []) as DivisionEntryRow[]);
     setMatches(visibleMatches);
     setMessage(visibleMatches.length > 0 ? successMessage : "No scheduled matches found yet.");
+  }
+
+  async function loadContactDirectory(clubId: string, entryRows: DivisionEntryRow[]) {
+    if (!supabase) return;
+
+    const playerResult = await supabase
+      .from("player_profiles")
+      .select("id, display_name, mobile_number, rating, user_id")
+      .eq("club_id", clubId);
+    let playerRows = (playerResult.data || []) as PlayerProfileRow[];
+    let playerError = playerResult.error;
+    if (playerError && isMissingMobileNumberColumn(playerError)) {
+      const fallback = await supabase.from("player_profiles").select("id, display_name, rating, user_id").eq("club_id", clubId);
+      playerRows = (fallback.data || []) as PlayerProfileRow[];
+      playerError = fallback.error;
+    }
+    if (!playerError) {
+      setAllPlayers(playerRows);
+    }
+
+    const teamIds = Array.from(new Set(entryRows.flatMap((entry) => (entry.team_id ? [entry.team_id] : []))));
+    if (teamIds.length === 0) {
+      setTeamMembers([]);
+      return;
+    }
+    const { data: memberRows, error: memberError } = await supabase.from("team_members").select("team_id, player_id").in("team_id", teamIds);
+    if (!memberError) {
+      setTeamMembers((memberRows || []) as TeamMemberRow[]);
+    }
   }
 
   async function submitScore(match: MatchRow, sets: MatchSet[]) {
@@ -583,13 +652,10 @@ export function PlayerWorkspace() {
 
   return (
     <>
-      <section className="hero">
+      <section className="player-mobile-header">
         <div>
-          <p className="eyebrow">Player view</p>
-          <h1>My matches</h1>
-          <p className="hero-copy">
-            Players only act on their own matches, while tournament schedules and leaderboards remain visible to everyone.
-          </p>
+          <p className="eyebrow">{dashboardTournament?.name || "Tournament"}</p>
+          <h1>My Schedule</h1>
           {message ? (
             <p className="subtle" data-testid="player-status" role="status">
               {message}
@@ -604,24 +670,12 @@ export function PlayerWorkspace() {
             </p>
           ) : null}
         </div>
-        <div className="grid two">
-          <div className="card metric">
-            <span className="pill blue">My Scheduled</span>
-            <strong>{scheduledCount}</strong>
-            <p className="subtle">Upcoming match windows</p>
-          </div>
-          <div className="card metric">
-            <span className="pill">{dashboardTournament?.sport || "Tournament"}</span>
-            <strong>{divisionCount}</strong>
-            <p className="subtle">Schedules with generated games</p>
-          </div>
-        </div>
       </section>
 
       <section className="player-stack">
         <div className="card">
           <div className="section-title">
-            <h2>Action Needed</h2>
+            <h2>My Games</h2>
             <Send size={22} aria-hidden />
           </div>
           {matches.length > 0 ? (
@@ -634,17 +688,19 @@ export function PlayerWorkspace() {
                   entryB={entries.find((entry) => entry.id === match.entry_b_id)}
                   key={match.id}
                   match={match}
+                  players={allPlayers}
                   myEntryIds={myEntryIds}
                   onClaimForfeit={claimForfeit}
                   onSubmitScore={submitScore}
+                  teamMembers={teamMembers}
                 />
               ))}
             </div>
           ) : (
             <EmptyState
               icon={<Flag size={24} aria-hidden />}
-              title="No player matches"
-              body="Your personal games appear after your login is linked to a scheduled player or team. All tournament games are shown below."
+              title="No games"
+              body=""
             />
           )}
         </div>
@@ -653,10 +709,9 @@ export function PlayerWorkspace() {
       <section className="player-stack">
         <div className="card">
           <div className="section-title">
-            <h2>All Tournament Games</h2>
+            <h2>All Games</h2>
             <ClipboardList size={22} aria-hidden />
           </div>
-          <p className="subtle" role="status">{dashboardMessage}</p>
           {dashboardMatches.length > 0 ? (
             <div className="match-list">
               {dashboardMatches.map((match) => {
@@ -687,15 +742,15 @@ export function PlayerWorkspace() {
           ) : (
             <EmptyState
               icon={<ClipboardList size={24} aria-hidden />}
-              title="No tournament games"
-              body="Generated schedules will appear here after an admin creates matches."
+              title="No games"
+              body=""
             />
           )}
         </div>
 
         <div className="card">
           <div className="section-title">
-            <h2>Leaderboards</h2>
+            <h2>Points</h2>
             <Medal size={22} aria-hidden />
           </div>
           {pointsTables.length > 0 ? (
@@ -737,31 +792,8 @@ export function PlayerWorkspace() {
           ) : (
             <EmptyState
               icon={<Medal size={24} aria-hidden />}
-              title="No standings yet"
-              body="Leaderboards are calculated after scores or forfeits are posted."
-            />
-          )}
-        </div>
-
-        <div className="card player-profile-card">
-          <div className="section-title">
-            <h2>My Profile</h2>
-            <Trophy size={22} aria-hidden />
-          </div>
-          {profiles.length > 0 ? (
-            <div className="compact-list">
-              {profiles.map((profile) => (
-                <div className="compact-row" key={profile.id}>
-                  <strong>{profile.display_name}</strong>
-                  <span className="subtle">{profile.rating || "No rating"}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={<Trophy size={24} aria-hidden />}
-              title="No linked player profile"
-              body="A player profile must be linked to your login before personal standings can be shown."
+              title="No points yet"
+              body=""
             />
           )}
         </div>
@@ -778,7 +810,9 @@ function MatchCard({
   match,
   myEntryIds,
   onClaimForfeit,
-  onSubmitScore
+  onSubmitScore,
+  players,
+  teamMembers
 }: {
   canAct: boolean;
   division?: DivisionRow;
@@ -788,10 +822,15 @@ function MatchCard({
   myEntryIds: string[];
   onClaimForfeit: (match: MatchRow, claimedByEntryId: string) => Promise<void>;
   onSubmitScore: (match: MatchRow, sets: MatchSet[]) => Promise<void>;
+  players: PlayerProfileRow[];
+  teamMembers: TeamMemberRow[];
 }) {
   const [showScoreForm, setShowScoreForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [claimingForfeit, setClaimingForfeit] = useState(false);
+  const [resultMode, setResultMode] = useState<"score" | "forfeit">("score");
+  const [playedDate, setPlayedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [forfeitWinnerId, setForfeitWinnerId] = useState("");
   const targetScore = match.target_score || 11;
   const [scoreForm, setScoreForm] = useState({
     set1A: String(targetScore),
@@ -810,9 +849,22 @@ function MatchCard({
   const canScoreUpdate = canSubmitScoreInWindow(match, isAdminPreview);
   const canEdit = canAct && canScoreUpdate && (match.status === "scheduled" || match.status === "score_submitted");
   const forfeitReason = getForfeitUnavailableReason(match);
+  const opponentEntry = playerEntryId === match.entry_a_id ? entryB : entryA;
+  const opponentPlayers = getEntryPlayers(opponentEntry, players, teamMembers);
+  const canOpenResult = canEdit || canForfeit || canForfeitForEntryA || canForfeitForEntryB;
+  const winnerForForfeit = isAdminPreview ? forfeitWinnerId : playerEntryId;
+  const canSaveForfeit = isAdminPreview
+    ? Boolean((winnerForForfeit === match.entry_a_id && canForfeitForEntryA) || (winnerForForfeit === match.entry_b_id && canForfeitForEntryB))
+    : canForfeit;
 
   async function handleScoreSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (resultMode === "forfeit") {
+      if (!canSaveForfeit) return;
+      await handleClaimForfeit(winnerForForfeit);
+      return;
+    }
+
     const sets = buildSets(scoreForm);
     setSubmitting(true);
     await onSubmitScore(match, sets);
@@ -828,88 +880,84 @@ function MatchCard({
   }
 
   return (
-    <article className="match-card">
-      <div className="match-meta">
-        <span className="pill blue">{division?.name || "Division"}</span>
-        <span className="pill">{match.round_label || `Round ${match.round}`}</span>
-        <span className="pill">To {targetScore}</span>
+    <article className="mobile-match-card">
+      <div className="match-rail" aria-hidden>
+        <CalendarDays size={22} />
       </div>
-      <div className="versus">
-        <span>{entryA?.label || "Entry A"}</span>
-        <span className="subtle">vs</span>
-        <span>{entryB?.label || "Entry B"}</span>
-      </div>
-      <p className="subtle">Schedule week: {match.schedule_week_start} to {match.schedule_week_end}</p>
-      <p className="subtle">Extension week: {match.extension_week_start} to {match.extension_week_end}</p>
-      <div className="toolbar">
-        <span className="pill orange">{match.status.replace("_", " ")}</span>
-        <button className="button secondary" disabled={!canEdit} onClick={() => setShowScoreForm((current) => !current)} type="button">
-          <Send size={18} aria-hidden />
-          Submit score
-        </button>
-        {isAdminPreview ? (
-          <>
-            <button
-              className="button warning"
-              disabled={!canForfeitForEntryA || claimingForfeit}
-              onClick={() => handleClaimForfeit(match.entry_a_id)}
-              type="button"
-            >
-              <Flag size={18} aria-hidden />
-              {claimingForfeit ? "Claiming..." : `Forfeit win: ${entryA?.label || "Entry A"}`}
+      <div className="mobile-match-body">
+        <div className="match-meta">
+          <span className="pill blue">{division?.name || "Schedule"}</span>
+          <span className="pill orange">{match.status.replace("_", " ")}</span>
+        </div>
+        <div className="mobile-match-main">
+          <div className="play-by">
+            <span>Play By</span>
+            <strong>{formatShortDate(match.schedule_week_end)}</strong>
+            <small>{formatWeekday(match.schedule_week_end)}</small>
+          </div>
+          <div className="mobile-match-opponent">
+            <span>{match.round_label || `Round ${match.round}`}</span>
+            <strong>vs {opponentEntry?.label || entryB?.label || "Opponent"}</strong>
+            {opponentPlayers.length > 0 ? <ContactLinks players={opponentPlayers} /> : null}
+            <button className="add-result-button" disabled={!canOpenResult} onClick={() => setShowScoreForm((current) => !current)} type="button">
+              <Send size={20} aria-hidden />
+              Add Result
             </button>
-            <button
-              className="button warning"
-              disabled={!canForfeitForEntryB || claimingForfeit}
-              onClick={() => handleClaimForfeit(match.entry_b_id)}
-              type="button"
-            >
-              <Flag size={18} aria-hidden />
-              {claimingForfeit ? "Claiming..." : `Forfeit win: ${entryB?.label || "Entry B"}`}
-            </button>
-          </>
-        ) : (
-          <button className="button warning" disabled={!canForfeit || claimingForfeit} onClick={() => handleClaimForfeit(playerEntryId)} type="button">
-            <Flag size={18} aria-hidden />
-            {claimingForfeit ? "Claiming..." : "Claim forfeit"}
-          </button>
-        )}
+          </div>
+        </div>
       </div>
       {!canScoreUpdate && match.restrict_score_updates ? <p className="subtle">Score updates are outside the allowed schedule window.</p> : null}
       {!canForfeit && !canForfeitForEntryA && !canForfeitForEntryB && forfeitReason ? <p className="subtle">{forfeitReason}</p> : null}
       {showScoreForm ? (
-        <form className="score-form" onSubmit={handleScoreSubmit}>
-          <ScoreSetFields
-            aLabel={entryA?.label || "A"}
-            bLabel={entryB?.label || "B"}
-            fieldA="set1A"
-            fieldB="set1B"
-            label="Set 1"
-            scoreForm={scoreForm}
-            setScoreForm={setScoreForm}
-          />
-          <ScoreSetFields
-            aLabel={entryA?.label || "A"}
-            bLabel={entryB?.label || "B"}
-            fieldA="set2A"
-            fieldB="set2B"
-            label="Set 2"
-            scoreForm={scoreForm}
-            setScoreForm={setScoreForm}
-          />
-          <ScoreSetFields
-            aLabel={entryA?.label || "A"}
-            bLabel={entryB?.label || "B"}
-            fieldA="set3A"
-            fieldB="set3B"
-            label="Set 3"
-            optional
-            scoreForm={scoreForm}
-            setScoreForm={setScoreForm}
-          />
-          <button className="button" disabled={submitting} type="submit">
-            <Send size={18} aria-hidden />
-            {submitting ? "Submitting..." : "Save score"}
+        <form className="score-entry-panel" onSubmit={handleScoreSubmit}>
+          <div className="score-entry-topbar">
+            <button className="score-back" onClick={() => setShowScoreForm(false)} type="button">
+              Back
+            </button>
+            <strong>Add Score</strong>
+            <span />
+          </div>
+          <div className="score-entry-card">
+            <p>Forfeit Game?</p>
+            <div className="choice-row">
+              <button
+                className={`choice-dot ${resultMode === "forfeit" ? "selected" : ""}`}
+                onClick={() => setResultMode("forfeit")}
+                type="button"
+              >
+                {resultMode === "forfeit" ? <Check size={18} aria-hidden /> : null}
+              </button>
+              <span>Yes</span>
+              <button className={`choice-dot ${resultMode === "score" ? "selected" : ""}`} onClick={() => setResultMode("score")} type="button">
+                {resultMode === "score" ? <Check size={18} aria-hidden /> : null}
+              </button>
+              <span>No</span>
+            </div>
+            {isAdminPreview && resultMode === "forfeit" ? (
+              <label className="field">
+                <span>Forfeit winner</span>
+                <select onChange={(event) => setForfeitWinnerId(event.target.value)} value={forfeitWinnerId}>
+                  <option value="">Select winner</option>
+                  <option value={match.entry_a_id}>{entryA?.label || "Entry A"}</option>
+                  <option value={match.entry_b_id}>{entryB?.label || "Entry B"}</option>
+                </select>
+              </label>
+            ) : null}
+          </div>
+          {resultMode === "score" ? (
+            <ScoreGrid
+              aLabel={entryA?.label || "A"}
+              bLabel={entryB?.label || "B"}
+              scoreForm={scoreForm}
+              setScoreForm={setScoreForm}
+            />
+          ) : null}
+          <label className="score-date-card">
+            <span>Date this game is played on</span>
+            <input onChange={(event) => setPlayedDate(event.target.value)} type="date" value={playedDate} />
+          </label>
+          <button className="score-save-button" disabled={submitting || claimingForfeit || (resultMode === "score" && !canEdit) || (resultMode === "forfeit" && !canSaveForfeit)} type="submit">
+            {submitting || claimingForfeit ? "Saving..." : "Save"}
           </button>
         </form>
       ) : null}
@@ -943,48 +991,74 @@ function canSubmitScoreInWindow(match: MatchRow, isAdminPreview: boolean) {
   return today >= scoreStart && today <= scoreEnd;
 }
 
-function ScoreSetFields({
+function ContactLinks({ players }: { players: PlayerProfileRow[] }) {
+  return (
+    <div className="contact-links">
+      {players
+        .filter((player) => normalizePhone(player.mobile_number))
+        .map((player) => {
+          const phone = normalizePhone(player.mobile_number);
+          return (
+            <div className="contact-row" key={player.id}>
+              <span>{player.display_name}</span>
+              <a className="contact-button" href={`https://wa.me/${phone}`} rel="noreferrer" target="_blank" aria-label={`WhatsApp ${player.display_name}`}>
+                <MessageCircle size={16} aria-hidden />
+              </a>
+              <a className="contact-button" href={`sms:${phone}`} aria-label={`Message ${player.display_name}`}>
+                <Send size={16} aria-hidden />
+              </a>
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
+function ScoreGrid({
   aLabel,
   bLabel,
-  fieldA,
-  fieldB,
-  label,
-  optional,
   scoreForm,
   setScoreForm
 }: {
   aLabel: string;
   bLabel: string;
-  fieldA: keyof ScoreFormState;
-  fieldB: keyof ScoreFormState;
-  label: string;
-  optional?: boolean;
   scoreForm: ScoreFormState;
   setScoreForm: React.Dispatch<React.SetStateAction<ScoreFormState>>;
 }) {
+  const columns: Array<{ set: string; a: keyof ScoreFormState; b: keyof ScoreFormState }> = [
+    { set: "1", a: "set1A", b: "set1B" },
+    { set: "2", a: "set2A", b: "set2B" },
+    { set: "3", a: "set3A", b: "set3B" }
+  ];
+
   return (
-    <div className="score-set">
-      <strong>{label}</strong>
-      <label className="field">
-        <span>{aLabel}</span>
+    <div className="score-grid" aria-label="Set scores">
+      <div />
+      {columns.map((column) => (
+        <strong key={column.set}>{column.set}</strong>
+      ))}
+      <span className="score-player-label">{aLabel}</span>
+      {columns.map((column, index) => (
         <input
+          key={column.a}
           min="0"
-          onChange={(event) => setScoreForm((current) => ({ ...current, [fieldA]: event.target.value }))}
-          required={!optional}
+          onChange={(event) => setScoreForm((current) => ({ ...current, [column.a]: event.target.value }))}
+          required={index < 2}
           type="number"
-          value={scoreForm[fieldA]}
+          value={scoreForm[column.a]}
         />
-      </label>
-      <label className="field">
-        <span>{bLabel}</span>
+      ))}
+      <span className="score-player-label">{bLabel}</span>
+      {columns.map((column, index) => (
         <input
+          key={column.b}
           min="0"
-          onChange={(event) => setScoreForm((current) => ({ ...current, [fieldB]: event.target.value }))}
-          required={!optional}
+          onChange={(event) => setScoreForm((current) => ({ ...current, [column.b]: event.target.value }))}
+          required={index < 2}
           type="number"
-          value={scoreForm[fieldB]}
+          value={scoreForm[column.b]}
         />
-      </label>
+      ))}
     </div>
   );
 }
@@ -1084,12 +1158,40 @@ function getWinRate(standing: StandingRow) {
   return ((standing.wins / matchesPlayed) * 100).toFixed(2);
 }
 
+function getEntryPlayers(entry: DivisionEntryRow | undefined, players: PlayerProfileRow[], teamMembers: TeamMemberRow[]) {
+  if (!entry) return [];
+  if (entry.player_id) {
+    const player = players.find((item) => item.id === entry.player_id);
+    return player ? [player] : [];
+  }
+  if (!entry.team_id) return [];
+  const memberIds = teamMembers.filter((member) => member.team_id === entry.team_id).map((member) => member.player_id);
+  return players.filter((player) => memberIds.includes(player.id));
+}
+
+function normalizePhone(value: string | null | undefined) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  if (digits.length === 10) return `1${digits}`;
+  return digits;
+}
+
+function formatShortDate(date: string) {
+  const parsed = new Date(`${date}T00:00:00`);
+  return parsed.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
+}
+
+function formatWeekday(date: string) {
+  const parsed = new Date(`${date}T00:00:00`);
+  return parsed.toLocaleDateString("en-US", { weekday: "short" });
+}
+
 function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
     <div className="empty-state">
       {icon}
       <h3>{title}</h3>
-      <p className="subtle">{body}</p>
+      {body ? <p className="subtle">{body}</p> : null}
     </div>
   );
 }
@@ -1097,6 +1199,11 @@ function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: strin
 function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
   const message = (error?.message || "").toLowerCase();
   return message.includes("access_disabled") || message.includes("schema cache");
+}
+
+function isMissingMobileNumberColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("mobile_number") || message.includes("schema cache");
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, timeout: string): Promise<T | { timeout: string }> {

@@ -9,6 +9,7 @@ type InvitePayload = {
   playerProfileId?: string;
   createPlayerProfile?: boolean;
   rating?: string;
+  mobileNumber?: string;
 };
 
 type AdminAccessRow = {
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
   const role = body.role === "admin" ? "admin" : "player";
   const playerProfileId = body.playerProfileId?.trim() || null;
   const rating = body.rating?.trim() || null;
+  const mobileNumber = body.mobileNumber?.trim() || null;
 
   if (!email || !fullName) {
     return NextResponse.json({ error: "Enter the user's name and email." }, { status: 400 });
@@ -124,22 +126,40 @@ export async function POST(request: NextRequest) {
   }
 
   if (playerProfileId) {
-    const { error: profileError } = await serviceClient
+    let { error: profileError } = await serviceClient
       .from("player_profiles")
-      .update({ user_id: authResult.data.user.id })
+      .update({ user_id: authResult.data.user.id, mobile_number: mobileNumber })
       .eq("id", playerProfileId)
       .eq("club_id", adminUser.club_id);
+    if (profileError && isMissingMobileNumberColumn(profileError)) {
+      const fallback = await serviceClient
+        .from("player_profiles")
+        .update({ user_id: authResult.data.user.id })
+        .eq("id", playerProfileId)
+        .eq("club_id", adminUser.club_id);
+      profileError = fallback.error;
+    }
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 400 });
     }
   } else if (body.createPlayerProfile && role === "player") {
-    const { error: createProfileError } = await serviceClient.from("player_profiles").insert({
+    let { error: createProfileError } = await serviceClient.from("player_profiles").insert({
       user_id: authResult.data.user.id,
       club_id: adminUser.club_id,
       display_name: fullName,
+      mobile_number: mobileNumber,
       rating
     });
+    if (createProfileError && isMissingMobileNumberColumn(createProfileError)) {
+      const fallback = await serviceClient.from("player_profiles").insert({
+        user_id: authResult.data.user.id,
+        club_id: adminUser.club_id,
+        display_name: fullName,
+        rating
+      });
+      createProfileError = fallback.error;
+    }
 
     if (createProfileError) {
       return NextResponse.json({ error: createProfileError.message }, { status: 400 });
@@ -159,4 +179,9 @@ export async function POST(request: NextRequest) {
 function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
   const message = (error?.message || "").toLowerCase();
   return message.includes("access_disabled") || message.includes("schema cache");
+}
+
+function isMissingMobileNumberColumn(error: { message?: string } | null | undefined) {
+  const message = (error?.message || "").toLowerCase();
+  return message.includes("mobile_number") || message.includes("schema cache");
 }
