@@ -43,7 +43,11 @@ type MatchRow = {
   target_score?: number | null;
   number_of_sets?: number | null;
   restrict_score_updates?: boolean | null;
+  score_update_before_days?: number | null;
+  score_update_after_days?: number | null;
   allow_forfeit?: boolean | null;
+  forfeit_before_days?: number | null;
+  forfeit_after_days?: number | null;
 };
 
 type StandingRow = {
@@ -188,7 +192,11 @@ export function HomeDashboard() {
           target_score: 11,
           number_of_sets: 3,
           restrict_score_updates: false,
-          allow_forfeit: true
+          score_update_before_days: 0,
+          score_update_after_days: 0,
+          allow_forfeit: true,
+          forfeit_before_days: 0,
+          forfeit_after_days: 0
         }))
       );
       setStandings(((standingRows || []) as StandingRow[]).sort((a, b) => b.points - a.points || b.wins - a.wins));

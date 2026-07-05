@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Flag, Send, Trophy } from "lucide-react";
-import { canClaimForfeit } from "@/lib/league-rules";
+import { addDays, canClaimForfeit } from "@/lib/league-rules";
 import { isMissingTargetScoreColumn, matchSelectBasic, matchSelectWithTargetScore } from "@/lib/match-queries";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { Match, MatchSet, MatchStatus } from "@/lib/types";
@@ -55,7 +55,11 @@ type MatchRow = {
   target_score?: number | null;
   number_of_sets?: number | null;
   restrict_score_updates?: boolean | null;
+  score_update_before_days?: number | null;
+  score_update_after_days?: number | null;
   allow_forfeit?: boolean | null;
+  forfeit_before_days?: number | null;
+  forfeit_after_days?: number | null;
 };
 
 export function PlayerWorkspace() {
@@ -295,7 +299,11 @@ export function PlayerWorkspace() {
         target_score: 11,
         number_of_sets: 3,
         restrict_score_updates: false,
-        allow_forfeit: true
+        score_update_before_days: 0,
+        score_update_after_days: 0,
+        allow_forfeit: true,
+        forfeit_before_days: 0,
+        forfeit_after_days: 0
       }));
       const visibleMatches =
         entryIds.length > 0 ? allMatches.filter((match) => entryIds.includes(match.entry_a_id) || entryIds.includes(match.entry_b_id)) : allMatches;
@@ -364,7 +372,11 @@ export function PlayerWorkspace() {
               target_score: match.target_score || 11,
               number_of_sets: match.number_of_sets || 3,
               restrict_score_updates: match.restrict_score_updates || false,
-              allow_forfeit: match.allow_forfeit !== false
+              score_update_before_days: match.score_update_before_days || 0,
+              score_update_after_days: match.score_update_after_days || 0,
+              allow_forfeit: match.allow_forfeit !== false,
+              forfeit_before_days: match.forfeit_before_days || 0,
+              forfeit_after_days: match.forfeit_after_days || 0
             } as MatchRow)
           : item
       )
@@ -413,7 +425,11 @@ export function PlayerWorkspace() {
               target_score: match.target_score || 11,
               number_of_sets: match.number_of_sets || 3,
               restrict_score_updates: match.restrict_score_updates || false,
-              allow_forfeit: match.allow_forfeit !== false
+              score_update_before_days: match.score_update_before_days || 0,
+              score_update_after_days: match.score_update_after_days || 0,
+              allow_forfeit: match.allow_forfeit !== false,
+              forfeit_before_days: match.forfeit_before_days || 0,
+              forfeit_after_days: match.forfeit_after_days || 0
             } as MatchRow)
           : item
       )
@@ -553,7 +569,8 @@ function MatchCard({
   const canForfeit = Boolean(playerEntryId && canClaimForfeit(forfeitMatch, playerEntryId));
   const canForfeitForEntryA = isAdminPreview && canClaimForfeit(forfeitMatch, match.entry_a_id);
   const canForfeitForEntryB = isAdminPreview && canClaimForfeit(forfeitMatch, match.entry_b_id);
-  const canEdit = canAct && (!match.restrict_score_updates || isAdminPreview) && (match.status === "scheduled" || match.status === "score_submitted");
+  const canScoreUpdate = canSubmitScoreInWindow(match, isAdminPreview);
+  const canEdit = canAct && canScoreUpdate && (match.status === "scheduled" || match.status === "score_submitted");
   const forfeitReason = getForfeitUnavailableReason(match);
 
   async function handleScoreSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -620,6 +637,7 @@ function MatchCard({
           </button>
         )}
       </div>
+      {!canScoreUpdate && match.restrict_score_updates ? <p className="subtle">Score updates are outside the allowed schedule window.</p> : null}
       {!canForfeit && !canForfeitForEntryA && !canForfeitForEntryB && forfeitReason ? <p className="subtle">{forfeitReason}</p> : null}
       {showScoreForm ? (
         <form className="score-form" onSubmit={handleScoreSubmit}>
@@ -672,9 +690,19 @@ function getForfeitUnavailableReason(match: MatchRow) {
     return "Forfeit is disabled for this schedule.";
   }
   const today = new Date().toISOString().slice(0, 10);
-  if (today < match.schedule_week_start) return "Forfeit opens during the schedule week.";
-  if (today > match.schedule_week_end) return "Forfeit is not allowed after the schedule week.";
+  const forfeitStart = addDays(match.schedule_week_start, -(match.forfeit_before_days || 0));
+  const forfeitEnd = addDays(match.schedule_week_end, match.forfeit_after_days || 0);
+  if (today < forfeitStart) return "Forfeit is not open yet.";
+  if (today > forfeitEnd) return "Forfeit is outside the allowed schedule window.";
   return "";
+}
+
+function canSubmitScoreInWindow(match: MatchRow, isAdminPreview: boolean) {
+  if (isAdminPreview || !match.restrict_score_updates) return true;
+  const today = new Date().toISOString().slice(0, 10);
+  const scoreStart = addDays(match.schedule_week_start, -(match.score_update_before_days || 0));
+  const scoreEnd = addDays(match.schedule_week_end, match.score_update_after_days || 0);
+  return today >= scoreStart && today <= scoreEnd;
 }
 
 function ScoreSetFields({
@@ -776,7 +804,11 @@ function toDomainMatch(match: MatchRow): Match {
     targetScore: match.target_score || 11,
     numberOfSets: match.number_of_sets || 3,
     restrictScoreUpdates: match.restrict_score_updates || false,
+    scoreUpdateBeforeDays: match.score_update_before_days || 0,
+    scoreUpdateAfterDays: match.score_update_after_days || 0,
     allowForfeit: match.allow_forfeit !== false,
+    forfeitBeforeDays: match.forfeit_before_days || 0,
+    forfeitAfterDays: match.forfeit_after_days || 0,
     scheduleWeekStart: match.schedule_week_start,
     scheduleWeekEnd: match.schedule_week_end,
     extensionWeekStart: match.extension_week_start,
