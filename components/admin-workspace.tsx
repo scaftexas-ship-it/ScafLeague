@@ -2077,10 +2077,10 @@ export function AdminWorkspace() {
             <h3>Upload People</h3>
             <p className="subtle">Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, role, password, rating.</p>
             <div className="toolbar compact-toolbar">
-              <a className="button secondary" download href="/player-import-template.xlsx">
+              <a className="button secondary" download="player-import-template.xlsx" href="/api/templates/player-import/xlsx/">
                 Download Excel template
               </a>
-              <a className="button secondary" download href="/player-import-template.csv">
+              <a className="button secondary" download="player-import-template.csv" href="/api/templates/player-import/csv/">
                 Download CSV template
               </a>
             </div>
