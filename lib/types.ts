@@ -3,6 +3,7 @@ export type DivisionFormat = "singles" | "doubles";
 export type UserRole = "admin" | "player";
 export type MatchStatus = "scheduled" | "score_submitted" | "completed" | "forfeit" | "cancelled";
 export type RegistrationStatus = "pending" | "approved" | "declined";
+export type ScheduleType = "round_robin" | "eliminator" | "manual";
 
 export type Player = {
   id: string;
@@ -91,3 +92,10 @@ export type Standing = {
   setsWon: number;
   setsLost: number;
 };
+
+/** League-wide scoring constants, quoted by the UI so labels never drift from the real rules. */
+export const SCORING_RULES = {
+  pointsPerWin: 4,
+  pointsPerPlayedLoss: 1,
+  bonusPointPerSetWonWhenLost: 1
+} as const;

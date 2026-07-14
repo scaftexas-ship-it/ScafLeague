@@ -1,0 +1,407 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { matchSelect, matchSetSelect } from "./match-queries";
+import type { DivisionFormat, MatchStatus, Sport, UserRole } from "./types";
+
+/**
+ * Thin, typed data-access layer for the admin workspace. Every function here
+ * does exactly one Supabase call (or one obviously-related group of calls)
+ * and throws a plain Error with the Postgres/PostgREST message on failure --
+ * callers show `error.message` to the admin and stop, instead of the old
+ * pattern of hand-rolling a `{data, error}` destructure at every call site.
+ *
+ * This file intentionally has zero React in it, so it's easy to test and easy
+ * to read independent of any component.
+ */
+
+export type TournamentRow = {
+  id: string;
+  club_id: string;
+  name: string;
+  sport: Sport;
+  start_date: string;
+  end_date: string;
+};
+
+export type DivisionRow = {
+  id: string;
+  tournament_id: string;
+  name: string;
+  skill_level: string;
+  format: DivisionFormat;
+};
+
+export type PlayerProfileRow = {
+  id: string;
+  club_id: string;
+  user_id: string | null;
+  display_name: string;
+  mobile_number: string | null;
+  rating: string | null;
+};
+
+export type AppUserRow = {
+  id: string;
+  club_id: string;
+  role: UserRole;
+  full_name: string;
+  email: string;
+  access_disabled: boolean;
+};
+
+export type TeamRow = {
+  id: string;
+  club_id: string;
+  name: string;
+};
+
+export type TeamMemberRow = {
+  team_id: string;
+  player_id: string;
+};
+
+export type DivisionEntryRow = {
+  id: string;
+  division_id: string;
+  label: string;
+  player_id: string | null;
+  team_id: string | null;
+};
+
+export type MatchRow = {
+  id: string;
+  division_id: string;
+  round: number;
+  round_label: string | null;
+  entry_a_id: string;
+  entry_b_id: string;
+  target_score: number;
+  number_of_sets: number;
+  restrict_score_updates: boolean;
+  score_update_before_days: number;
+  score_update_after_days: number;
+  allow_forfeit: boolean;
+  forfeit_before_days: number;
+  forfeit_after_days: number;
+  schedule_week_start: string;
+  schedule_week_end: string;
+  extension_week_start: string;
+  extension_week_end: string;
+  status: MatchStatus;
+  winner_entry_id: string | null;
+  forfeit_by_entry_id: string | null;
+};
+
+export type MatchSetRow = {
+  id: string;
+  match_id: string;
+  set_number: number;
+  entry_a_score: number;
+  entry_b_score: number;
+};
+
+function fail(error: { message?: string } | null, fallback: string): never {
+  throw new Error(error?.message || fallback);
+}
+
+export async function getCurrentAppUser(supabase: SupabaseClient) {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) return null;
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, club_id, role, full_name, email, access_disabled")
+    .eq("id", authData.user.id)
+    .maybeSingle();
+  if (error) fail(error, "Could not load your account.");
+  return data as AppUserRow | null;
+}
+
+export async function listTournaments(supabase: SupabaseClient, clubId: string) {
+  const { data, error } = await supabase
+    .from("tournaments")
+    .select("id, club_id, name, sport, start_date, end_date")
+    .eq("club_id", clubId)
+    .order("created_at", { ascending: false });
+  if (error) fail(error, "Could not load tournaments.");
+  return (data || []) as TournamentRow[];
+}
+
+export async function createTournament(
+  supabase: SupabaseClient,
+  input: { clubId: string; name: string; sport: Sport; startDate: string; endDate: string; createdBy: string }
+) {
+  const { data, error } = await supabase
+    .from("tournaments")
+    .insert({
+      club_id: input.clubId,
+      name: input.name,
+      sport: input.sport,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      created_by: input.createdBy
+    })
+    .select("id, club_id, name, sport, start_date, end_date")
+    .single();
+  if (error) fail(error, "Could not create the tournament.");
+  return data as TournamentRow;
+}
+
+export async function listDivisions(supabase: SupabaseClient, tournamentId: string) {
+  const { data, error } = await supabase
+    .from("divisions")
+    .select("id, tournament_id, name, skill_level, format")
+    .eq("tournament_id", tournamentId)
+    .order("created_at", { ascending: true });
+  if (error) fail(error, "Could not load divisions.");
+  return (data || []) as DivisionRow[];
+}
+
+export async function createDivision(
+  supabase: SupabaseClient,
+  input: { tournamentId: string; name: string; skillLevel: string; format: DivisionFormat }
+) {
+  const { data, error } = await supabase
+    .from("divisions")
+    .insert({ tournament_id: input.tournamentId, name: input.name, skill_level: input.skillLevel, format: input.format })
+    .select("id, tournament_id, name, skill_level, format")
+    .single();
+  if (error) fail(error, "Could not create the division.");
+  return data as DivisionRow;
+}
+
+export async function listPlayers(supabase: SupabaseClient, clubId: string) {
+  const { data, error } = await supabase
+    .from("player_profiles")
+    .select("id, club_id, user_id, display_name, mobile_number, rating")
+    .eq("club_id", clubId)
+    .order("display_name", { ascending: true });
+  if (error) fail(error, "Could not load players.");
+  return (data || []) as PlayerProfileRow[];
+}
+
+export async function addPlayer(
+  supabase: SupabaseClient,
+  input: { clubId: string; displayName: string; mobileNumber: string; rating: string }
+) {
+  const { data, error } = await supabase
+    .from("player_profiles")
+    .insert({
+      club_id: input.clubId,
+      display_name: input.displayName,
+      mobile_number: input.mobileNumber.trim() || null,
+      rating: input.rating.trim() || null
+    })
+    .select("id, club_id, user_id, display_name, mobile_number, rating")
+    .single();
+  if (error) fail(error, "Could not add the player.");
+  return data as PlayerProfileRow;
+}
+
+export async function listAppUsers(supabase: SupabaseClient, clubId: string) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, club_id, role, full_name, email, access_disabled")
+    .eq("club_id", clubId)
+    .order("full_name", { ascending: true });
+  if (error) fail(error, "Could not load user accounts.");
+  return (data || []) as AppUserRow[];
+}
+
+export async function updateUserRole(supabase: SupabaseClient, userId: string, role: UserRole) {
+  const { error } = await supabase.from("users").update({ role }).eq("id", userId);
+  if (error) fail(error, "Could not update the role.");
+}
+
+export async function toggleUserAccess(supabase: SupabaseClient, userId: string, accessDisabled: boolean) {
+  const { error } = await supabase.from("users").update({ access_disabled: accessDisabled }).eq("id", userId);
+  if (error) fail(error, "Could not update account access.");
+}
+
+export async function linkUserToPlayer(supabase: SupabaseClient, input: { userId: string; playerProfileId: string; clubId: string }) {
+  // Enforce a 1:1 user<->player-profile link by clearing any existing link first.
+  const unlink = await supabase.from("player_profiles").update({ user_id: null }).eq("user_id", input.userId);
+  if (unlink.error) fail(unlink.error, "Could not update the existing profile link.");
+
+  const relink = await supabase
+    .from("player_profiles")
+    .update({ user_id: input.userId })
+    .eq("id", input.playerProfileId)
+    .eq("club_id", input.clubId);
+  if (relink.error) fail(relink.error, "Could not link the profile.");
+}
+
+export async function listTeams(supabase: SupabaseClient, clubId: string) {
+  const { data, error } = await supabase.from("teams").select("id, club_id, name").eq("club_id", clubId).order("name", { ascending: true });
+  if (error) fail(error, "Could not load teams.");
+  return (data || []) as TeamRow[];
+}
+
+/**
+ * Creates a doubles team and its two members as one logical operation. If the
+ * member insert fails after the team row was created, we best-effort delete
+ * the orphaned team row instead of leaving it dangling (the old app left
+ * these orphans on partial failure).
+ */
+export async function createTeam(supabase: SupabaseClient, input: { clubId: string; name: string; playerAId: string; playerBId: string }) {
+  const team = await supabase.from("teams").insert({ club_id: input.clubId, name: input.name }).select("id, club_id, name").single();
+  if (team.error) fail(team.error, "Could not create the team.");
+
+  const teamRow = team.data as TeamRow;
+  const members = await supabase.from("team_members").insert([
+    { team_id: teamRow.id, player_id: input.playerAId },
+    { team_id: teamRow.id, player_id: input.playerBId }
+  ]);
+
+  if (members.error) {
+    await supabase.from("teams").delete().eq("id", teamRow.id);
+    fail(members.error, "Could not add players to the team.");
+  }
+
+  return teamRow;
+}
+
+export async function listTeamMembers(supabase: SupabaseClient, teamIds: string[]) {
+  if (teamIds.length === 0) return [] as TeamMemberRow[];
+  const { data, error } = await supabase.from("team_members").select("team_id, player_id").in("team_id", teamIds);
+  if (error) fail(error, "Could not load team rosters.");
+  return (data || []) as TeamMemberRow[];
+}
+
+export async function listDivisionEntries(supabase: SupabaseClient, divisionIds: string[]) {
+  if (divisionIds.length === 0) return [] as DivisionEntryRow[];
+  const { data, error } = await supabase
+    .from("division_entries")
+    .select("id, division_id, label, player_id, team_id")
+    .in("division_id", divisionIds)
+    .order("label", { ascending: true });
+  if (error) fail(error, "Could not load division entries.");
+  return (data || []) as DivisionEntryRow[];
+}
+
+export async function insertDivisionEntries(
+  supabase: SupabaseClient,
+  rows: Array<{ division_id: string; label: string; player_id?: string; team_id?: string }>
+) {
+  if (rows.length === 0) return [] as DivisionEntryRow[];
+  const { data, error } = await supabase.from("division_entries").insert(rows).select("id, division_id, label, player_id, team_id");
+  if (error) fail(error, "Could not save division entries.");
+  return (data || []) as DivisionEntryRow[];
+}
+
+export async function listMatches(supabase: SupabaseClient, divisionIds: string[]) {
+  if (divisionIds.length === 0) return [] as MatchRow[];
+  const { data, error } = await supabase
+    .from("matches")
+    .select(matchSelect)
+    .in("division_id", divisionIds)
+    .order("schedule_week_start", { ascending: true })
+    .order("round", { ascending: true });
+  if (error) fail(error, "Could not load matches.");
+  return (data || []) as unknown as MatchRow[];
+}
+
+export async function listMatchSets(supabase: SupabaseClient, matchIds: string[]) {
+  if (matchIds.length === 0) return [] as MatchSetRow[];
+  const { data, error } = await supabase.from("match_sets").select(matchSetSelect).in("match_id", matchIds).order("set_number", { ascending: true });
+  if (error) fail(error, "Could not load match scores.");
+  return (data || []) as unknown as MatchSetRow[];
+}
+
+export type NewMatchRow = {
+  division_id: string;
+  round: number;
+  round_label?: string;
+  entry_a_id: string;
+  entry_b_id: string;
+  target_score: number;
+  number_of_sets: number;
+  restrict_score_updates: boolean;
+  score_update_before_days: number;
+  score_update_after_days: number;
+  allow_forfeit: boolean;
+  forfeit_before_days: number;
+  forfeit_after_days: number;
+  schedule_week_start: string;
+  schedule_week_end: string;
+  extension_week_start: string;
+  extension_week_end: string;
+  status: "scheduled";
+};
+
+export async function insertMatches(supabase: SupabaseClient, rows: NewMatchRow[]) {
+  const { data, error } = await supabase.from("matches").insert(rows).select(matchSelect);
+  if (error) fail(error, "Could not save the generated schedule.");
+  return (data || []) as unknown as MatchRow[];
+}
+
+export async function deleteMatches(supabase: SupabaseClient, matchIds: string[]) {
+  if (matchIds.length === 0) return;
+  const { error } = await supabase.from("matches").delete().in("id", matchIds);
+  if (error) fail(error, "Schedule was saved, but the previous matches could not be removed.");
+}
+
+export async function replaceMatchSets(supabase: SupabaseClient, matchId: string, sets: Array<{ setNumber: number; entryAScore: number; entryBScore: number }>) {
+  const cleared = await supabase.from("match_sets").delete().eq("match_id", matchId);
+  if (cleared.error) fail(cleared.error, "Could not clear the previous score.");
+
+  if (sets.length === 0) return;
+  const inserted = await supabase.from("match_sets").insert(
+    sets.map((set) => ({ match_id: matchId, set_number: set.setNumber, entry_a_score: set.entryAScore, entry_b_score: set.entryBScore }))
+  );
+  if (inserted.error) fail(inserted.error, "Could not save the score.");
+}
+
+export async function updateMatch(
+  supabase: SupabaseClient,
+  matchId: string,
+  patch: Partial<{
+    round_label: string | null;
+    target_score: number;
+    schedule_week_start: string;
+    schedule_week_end: string;
+    extension_week_start: string;
+    extension_week_end: string;
+    status: MatchStatus;
+    winner_entry_id: string | null;
+    forfeit_by_entry_id: string | null;
+  }>
+) {
+  const { data, error } = await supabase.from("matches").update(patch).eq("id", matchId).select(matchSelect).single();
+  if (error) fail(error, "Could not save the match.");
+  return data as unknown as MatchRow;
+}
+
+export async function insertForfeitClaim(
+  supabase: SupabaseClient,
+  input: { matchId: string; claimedByEntryId: string; opponentEntryId: string; createdBy: string }
+) {
+  const { error } = await supabase.from("forfeit_claims").insert({
+    match_id: input.matchId,
+    claimed_by_entry_id: input.claimedByEntryId,
+    opponent_entry_id: input.opponentEntryId,
+    created_by: input.createdBy
+  });
+  if (error) fail(error, "Could not record the forfeit.");
+}
+
+export type StandingRow = {
+  division_id: string;
+  entry_id: string;
+  played: number;
+  wins: number;
+  losses: number;
+  forfeits_won: number;
+  forfeits_lost: number;
+  cancelled: number;
+  points: number;
+};
+
+export async function listStandings(supabase: SupabaseClient, divisionIds: string[]) {
+  if (divisionIds.length === 0) return [] as StandingRow[];
+  const { data, error } = await supabase
+    .from("standings")
+    .select("division_id, entry_id, played, wins, losses, forfeits_won, forfeits_lost, cancelled, points")
+    .in("division_id", divisionIds);
+  if (error) fail(error, "Could not load standings.");
+  return (data || []) as StandingRow[];
+}

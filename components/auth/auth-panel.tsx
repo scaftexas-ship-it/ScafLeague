@@ -4,13 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
+import { StatusBanner } from "@/components/ui/status-banner";
+import type { UserRole } from "@/lib/types";
 
 type AppUser = {
   id: string;
-  role: "admin" | "player";
+  role: UserRole;
   full_name: string;
   email: string;
-  access_disabled?: boolean | null;
+  access_disabled: boolean;
 };
 
 export function AuthPanel() {
@@ -49,16 +51,10 @@ export function AuthPanel() {
 
   async function getRegisteredUser(userId: string) {
     if (!supabase) return null;
-    let { data, error } = (await supabase.from("users").select("id, role, full_name, email, access_disabled").eq("id", userId).maybeSingle()) as {
+    const { data, error } = (await supabase.from("users").select("id, role, full_name, email, access_disabled").eq("id", userId).maybeSingle()) as {
       data: AppUser | null;
       error: { message?: string } | null;
     };
-
-    if (error && isMissingAccessDisabledColumn(error)) {
-      const fallback = await supabase.from("users").select("id, role, full_name, email").eq("id", userId).maybeSingle();
-      data = fallback.data as AppUser | null;
-      error = fallback.error;
-    }
 
     if (error || !data) {
       await supabase.auth.signOut();
@@ -67,14 +63,14 @@ export function AuthPanel() {
       return null;
     }
 
-    if ((data as AppUser).access_disabled) {
+    if (data.access_disabled) {
       await supabase.auth.signOut();
       setMessage("This login has been disabled by an admin.");
       setCurrentUser(null);
       return null;
     }
 
-    return data as AppUser;
+    return data;
   }
 
   function openRoleHome(user: AppUser) {
@@ -111,7 +107,7 @@ export function AuthPanel() {
   }
 
   return (
-    <div className="card form-grid">
+    <div className="form-grid">
       {currentUser ? (
         <div className="section-title">
           <div>
@@ -155,12 +151,7 @@ export function AuthPanel() {
         )}
       </div>
       <p className="subtle">Only users already added by an admin can access the league.</p>
-      {message ? <p className="subtle">{message}</p> : null}
+      <StatusBanner message={message} />
     </div>
   );
-}
-
-function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
-  const message = (error?.message || "").toLowerCase();
-  return message.includes("access_disabled") || message.includes("schema cache");
 }

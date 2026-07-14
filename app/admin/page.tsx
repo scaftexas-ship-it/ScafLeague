@@ -1,4 +1,4 @@
-import { AdminWorkspace } from "@/components/admin-workspace";
+import { AdminWorkspace } from "@/components/admin/admin-workspace";
 
 export default function AdminPage() {
   return (

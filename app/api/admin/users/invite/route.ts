@@ -16,7 +16,7 @@ type AdminAccessRow = {
   id: string;
   club_id: string;
   role: "admin" | "player";
-  access_disabled?: boolean | null;
+  access_disabled: boolean;
 };
 
 export async function POST(request: NextRequest) {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   if (!serviceRoleKey) {
     return NextResponse.json(
-      { error: "Add SUPABASE_SERVICE_ROLE_KEY to .env.local to enable admin login invites." },
+      { error: "Add SUPABASE_SERVICE_ROLE_KEY to .env.local to enable admin login invites (missing service_role key)." },
       { status: 501 }
     );
   }
@@ -70,16 +70,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sign in as an admin before inviting users." }, { status: 401 });
   }
 
-  let { data: adminUser, error: adminError } = (await serviceClient
+  const { data: adminUser, error: adminError } = (await serviceClient
     .from("users")
     .select("id, club_id, role, access_disabled")
     .eq("id", user.id)
     .maybeSingle()) as { data: AdminAccessRow | null; error: { message?: string } | null };
-  if (adminError && isMissingAccessDisabledColumn(adminError)) {
-    const fallback = await serviceClient.from("users").select("id, club_id, role").eq("id", user.id).maybeSingle();
-    adminUser = fallback.data as AdminAccessRow | null;
-    adminError = fallback.error;
-  }
 
   if (adminError || !adminUser || adminUser.role !== "admin" || adminUser.access_disabled) {
     return NextResponse.json({ error: "Only enabled admins can invite users." }, { status: 403 });
@@ -101,7 +96,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: authResult.error?.message || "Could not create the login." }, { status: 400 });
   }
 
-  let { error: userError } = await serviceClient.from("users").upsert({
+  const { error: userError } = await serviceClient.from("users").upsert({
     id: authResult.data.user.id,
     club_id: adminUser.club_id,
     role,
@@ -110,56 +105,28 @@ export async function POST(request: NextRequest) {
     access_disabled: false
   });
 
-  if (userError && isMissingAccessDisabledColumn(userError)) {
-    const fallback = await serviceClient.from("users").upsert({
-      id: authResult.data.user.id,
-      club_id: adminUser.club_id,
-      role,
-      full_name: fullName,
-      email
-    });
-    userError = fallback.error;
-  }
-
   if (userError) {
     return NextResponse.json({ error: userError.message }, { status: 400 });
   }
 
   if (playerProfileId) {
-    let { error: profileError } = await serviceClient
+    const { error: profileError } = await serviceClient
       .from("player_profiles")
       .update({ user_id: authResult.data.user.id, mobile_number: mobileNumber })
       .eq("id", playerProfileId)
       .eq("club_id", adminUser.club_id);
-    if (profileError && isMissingMobileNumberColumn(profileError)) {
-      const fallback = await serviceClient
-        .from("player_profiles")
-        .update({ user_id: authResult.data.user.id })
-        .eq("id", playerProfileId)
-        .eq("club_id", adminUser.club_id);
-      profileError = fallback.error;
-    }
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 400 });
     }
   } else if (body.createPlayerProfile && role === "player") {
-    let { error: createProfileError } = await serviceClient.from("player_profiles").insert({
+    const { error: createProfileError } = await serviceClient.from("player_profiles").insert({
       user_id: authResult.data.user.id,
       club_id: adminUser.club_id,
       display_name: fullName,
       mobile_number: mobileNumber,
       rating
     });
-    if (createProfileError && isMissingMobileNumberColumn(createProfileError)) {
-      const fallback = await serviceClient.from("player_profiles").insert({
-        user_id: authResult.data.user.id,
-        club_id: adminUser.club_id,
-        display_name: fullName,
-        rating
-      });
-      createProfileError = fallback.error;
-    }
 
     if (createProfileError) {
       return NextResponse.json({ error: createProfileError.message }, { status: 400 });
@@ -174,14 +141,4 @@ export async function POST(request: NextRequest) {
       role
     }
   });
-}
-
-function isMissingAccessDisabledColumn(error: { message?: string } | null | undefined) {
-  const message = (error?.message || "").toLowerCase();
-  return message.includes("access_disabled") || message.includes("schema cache");
-}
-
-function isMissingMobileNumberColumn(error: { message?: string } | null | undefined) {
-  const message = (error?.message || "").toLowerCase();
-  return message.includes("mobile_number") || message.includes("schema cache");
 }

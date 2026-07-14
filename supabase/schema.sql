@@ -1,3 +1,11 @@
+-- SCAF League schema.
+--
+-- Unlike the previous version of this app, every column below is created up
+-- front in a single migration. The old schema shipped in pieces (see the
+-- add-*.sql files this replaces) which forced the application code to guess
+-- at runtime whether a given column existed yet. Run this once against a
+-- fresh Supabase project and the app never has to special-case schema drift.
+
 create extension if not exists pgcrypto;
 
 create type public.user_role as enum ('admin', 'player');

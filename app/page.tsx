@@ -1,4 +1,4 @@
-import { HomeDashboard } from "@/components/home-dashboard";
+import { HomeDashboard } from "@/components/home/home-dashboard";
 
 export default function HomePage() {
   return (
