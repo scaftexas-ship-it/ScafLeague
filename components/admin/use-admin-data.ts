@@ -138,8 +138,10 @@ export function useAdminData() {
   );
 
   const reloadTournaments = useCallback(async () => {
-    if (!supabase || !adminUser) return;
-    setTournaments(await listTournaments(supabase, adminUser.club_id));
+    if (!supabase || !adminUser) return [] as TournamentRow[];
+    const rows = await listTournaments(supabase, adminUser.club_id);
+    setTournaments(rows);
+    return rows;
   }, [supabase, adminUser]);
 
   const reloadPlayers = useCallback(async () => {

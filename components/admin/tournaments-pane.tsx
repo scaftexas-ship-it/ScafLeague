@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { createTournament } from "@/lib/admin-data";
+import { createTournament, deleteTournament } from "@/lib/admin-data";
 import { SCORING_RULES } from "@/lib/types";
 import type { Sport } from "@/lib/types";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "./use-admin-data";
 import { ScheduleBuilderPane } from "./schedule-builder/schedule-builder-pane";
@@ -41,6 +42,18 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
       setMessage(error instanceof Error ? error.message : "Could not save the tournament.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function removeTournament(tournamentId: string) {
+    if (!admin.supabase) return;
+    try {
+      await deleteTournament(admin.supabase, tournamentId);
+      const remaining = await admin.reloadTournaments();
+      if (admin.selectedTournamentId === tournamentId) admin.setSelectedTournamentId(remaining[0]?.id || "");
+      setMessage("Tournament deleted.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not delete the tournament.");
     }
   }
 
@@ -90,16 +103,25 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
         </div>
 
         {admin.tournaments.length > 0 ? (
-          <label className="field">
-            <span>Selected tournament</span>
-            <select onChange={(event) => admin.setSelectedTournamentId(event.target.value)} value={admin.selectedTournamentId}>
-              {admin.tournaments.map((tournament) => (
-                <option key={tournament.id} value={tournament.id}>
-                  {tournament.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="spread">
+            <label className="field">
+              <span>Selected tournament</span>
+              <select onChange={(event) => admin.setSelectedTournamentId(event.target.value)} value={admin.selectedTournamentId}>
+                {admin.tournaments.map((tournament) => (
+                  <option key={tournament.id} value={tournament.id}>
+                    {tournament.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {admin.selectedTournamentId ? (
+              <ConfirmButton
+                confirmLabel={`Delete${admin.divisions.length > 0 ? ` (${admin.divisions.length} division${admin.divisions.length === 1 ? "" : "s"})` : ""}?`}
+                key={admin.selectedTournamentId}
+                onConfirm={() => removeTournament(admin.selectedTournamentId)}
+              />
+            ) : null}
+          </div>
         ) : null}
       </div>
 

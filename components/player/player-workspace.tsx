@@ -129,7 +129,10 @@ export function PlayerWorkspace() {
 
   async function submitScore(match: MatchRow, sets: MatchSet[]) {
     if (!supabase) return;
-    const winnerEntryId = getWinnerEntryId(match, sets);
+    const winnerEntryId = getWinnerEntryId(
+      { entryAId: match.entry_a_id, entryBId: match.entry_b_id, numberOfSets: match.number_of_sets },
+      sets
+    );
     if (!winnerEntryId) {
       setMessage("Enter a valid score with a clear winner.");
       return;

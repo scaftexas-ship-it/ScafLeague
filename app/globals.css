@@ -309,6 +309,34 @@ button {
   font-size: 13px;
 }
 
+.confirm-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--color-surface-muted);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .link-button {
   background: none;
   border: none;

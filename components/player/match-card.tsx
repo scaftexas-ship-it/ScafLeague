@@ -148,7 +148,13 @@ export function MatchCard({
               ) : null}
             </div>
             {resultMode === "score" ? (
-              <ScoreGrid aLabel={entryA?.label || "A"} bLabel={entryB?.label || "B"} scoreForm={scoreForm} setScoreForm={setScoreForm} />
+              <ScoreGrid
+                aLabel={entryA?.label || "A"}
+                bLabel={entryB?.label || "B"}
+                numberOfSets={match.number_of_sets}
+                scoreForm={scoreForm}
+                setScoreForm={setScoreForm}
+              />
             ) : null}
             <button
               className="score-save-button"
@@ -167,19 +173,23 @@ export function MatchCard({
 function ScoreGrid({
   aLabel,
   bLabel,
+  numberOfSets,
   scoreForm,
   setScoreForm
 }: {
   aLabel: string;
   bLabel: string;
+  numberOfSets: number;
   scoreForm: SetScoreForm;
   setScoreForm: React.Dispatch<React.SetStateAction<SetScoreForm>>;
 }) {
-  const columns: Array<{ set: string; a: keyof SetScoreForm; b: keyof SetScoreForm }> = [
+  const allColumns: Array<{ set: string; a: keyof SetScoreForm; b: keyof SetScoreForm }> = [
     { set: "1", a: "set1A", b: "set1B" },
     { set: "2", a: "set2A", b: "set2B" },
     { set: "3", a: "set3A", b: "set3B" }
   ];
+  const columns = allColumns.slice(0, Math.min(Math.max(numberOfSets, 1), allColumns.length));
+  const majorityNeeded = Math.ceil(columns.length / 2);
 
   return (
     <div className="score-grid" aria-label="Set scores">
@@ -193,7 +203,7 @@ function ScoreGrid({
           key={column.a}
           min="0"
           onChange={(event) => setScoreForm((current) => ({ ...current, [column.a]: event.target.value }))}
-          required={index < 2}
+          required={index < majorityNeeded}
           type="number"
           value={scoreForm[column.a]}
         />
@@ -204,7 +214,7 @@ function ScoreGrid({
           key={column.b}
           min="0"
           onChange={(event) => setScoreForm((current) => ({ ...current, [column.b]: event.target.value }))}
-          required={index < 2}
+          required={index < majorityNeeded}
           type="number"
           value={scoreForm[column.b]}
         />

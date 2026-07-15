@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogIn, ShieldCheck, UserRound } from "lucide-react";
+import { LogIn, ShieldCheck, UserPlus, UserRound } from "lucide-react";
 import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { UserRole } from "@/lib/types";
@@ -18,6 +18,7 @@ type AppUser = {
 export function AuthPanel() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState(hasSupabaseConfig() ? "" : "Add Supabase credentials to enable live sign-in.");
@@ -98,6 +99,27 @@ export function AuthPanel() {
     openRoleHome(registeredUser);
   }
 
+  async function signUp() {
+    if (!supabase) return;
+    setSigningIn(true);
+    setMessage("");
+    const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+    setSigningIn(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setPassword("");
+    setMode("signin");
+    setMessage(
+      data.session
+        ? "Account created. Ask an admin to add your account before you can access the league (the first admin runs supabase/promote-admins.sql)."
+        : "Account created. Check your email to confirm it, then ask an admin to add your account before you can access the league."
+    );
+  }
+
   async function signOut() {
     if (!supabase) return;
     await supabase.auth.signOut();
@@ -124,7 +146,7 @@ export function AuthPanel() {
       <label className="field">
         <span>Password</span>
         <input
-          autoComplete="current-password"
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
           disabled={checking || Boolean(currentUser)}
           minLength={6}
           onChange={(event) => setPassword(event.target.value)}
@@ -143,6 +165,11 @@ export function AuthPanel() {
               Sign out
             </button>
           </>
+        ) : mode === "signup" ? (
+          <button className="button" disabled={checking || signingIn || !email || !password} onClick={signUp} type="button">
+            <UserPlus size={18} aria-hidden />
+            {signingIn ? "Creating account..." : "Create account"}
+          </button>
         ) : (
           <button className="button" disabled={checking || signingIn || !email || !password} onClick={signIn} type="button">
             <LogIn size={18} aria-hidden />
@@ -150,6 +177,19 @@ export function AuthPanel() {
           </button>
         )}
       </div>
+      {currentUser ? null : (
+        <button
+          className="link-button"
+          disabled={checking || signingIn}
+          onClick={() => {
+            setMode(mode === "signup" ? "signin" : "signup");
+            setMessage("");
+          }}
+          type="button"
+        >
+          {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
+        </button>
+      )}
       <p className="subtle">Only users already added by an admin can access the league.</p>
       <StatusBanner message={message} />
     </div>

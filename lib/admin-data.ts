@@ -146,6 +146,12 @@ export async function createTournament(
   return data as TournamentRow;
 }
 
+/** Deletes a tournament and everything under it (divisions, entries, matches, sets, forfeit claims cascade via the schema's FKs). */
+export async function deleteTournament(supabase: SupabaseClient, tournamentId: string) {
+  const { error } = await supabase.from("tournaments").delete().eq("id", tournamentId);
+  if (error) fail(error, "Could not delete the tournament.");
+}
+
 export async function listDivisions(supabase: SupabaseClient, tournamentId: string) {
   const { data, error } = await supabase
     .from("divisions")
@@ -167,6 +173,12 @@ export async function createDivision(
     .single();
   if (error) fail(error, "Could not create the division.");
   return data as DivisionRow;
+}
+
+/** Deletes a division and everything under it (entries, matches, sets, forfeit claims cascade via the schema's FKs). */
+export async function deleteDivision(supabase: SupabaseClient, divisionId: string) {
+  const { error } = await supabase.from("divisions").delete().eq("id", divisionId);
+  if (error) fail(error, "Could not delete the division.");
 }
 
 export async function listPlayers(supabase: SupabaseClient, clubId: string) {
@@ -195,6 +207,23 @@ export async function addPlayer(
     .single();
   if (error) fail(error, "Could not add the player.");
   return data as PlayerProfileRow;
+}
+
+/** True if the player currently holds a singles division entry or a doubles team seat anywhere in the club (not just the currently-loaded tournament), since deleting them would cascade-delete those entries and their matches. */
+export async function isPlayerInUse(supabase: SupabaseClient, playerId: string) {
+  const [entries, members] = await Promise.all([
+    supabase.from("division_entries").select("id", { count: "exact", head: true }).eq("player_id", playerId),
+    supabase.from("team_members").select("team_id", { count: "exact", head: true }).eq("player_id", playerId)
+  ]);
+  if (entries.error) fail(entries.error, "Could not check the player's division entries.");
+  if (members.error) fail(members.error, "Could not check the player's team membership.");
+  return (entries.count || 0) > 0 || (members.count || 0) > 0;
+}
+
+/** Deletes a player profile. Blocked by isPlayerInUse in the UI first -- division_entries.player_id and team_members.player_id both cascade-delete, which would silently wipe matches if the player is still on an active roster. */
+export async function deletePlayer(supabase: SupabaseClient, playerId: string) {
+  const { error } = await supabase.from("player_profiles").delete().eq("id", playerId);
+  if (error) fail(error, "Could not delete the player.");
 }
 
 export async function listAppUsers(supabase: SupabaseClient, clubId: string) {
@@ -267,6 +296,15 @@ export async function listTeamMembers(supabase: SupabaseClient, teamIds: string[
   return (data || []) as TeamMemberRow[];
 }
 
+/** Swaps one player out of a doubles team for another (e.g. an injury replacement mid-tournament). The team id -- and every division entry / match that references it -- stays the same. */
+export async function replaceTeamMember(supabase: SupabaseClient, teamId: string, oldPlayerId: string, newPlayerId: string) {
+  const insert = await supabase.from("team_members").insert({ team_id: teamId, player_id: newPlayerId });
+  if (insert.error) fail(insert.error, "Could not add the replacement player to the team.");
+
+  const remove = await supabase.from("team_members").delete().eq("team_id", teamId).eq("player_id", oldPlayerId);
+  if (remove.error) fail(remove.error, "Could not remove the outgoing player from the team.");
+}
+
 export async function listDivisionEntries(supabase: SupabaseClient, divisionIds: string[]) {
   if (divisionIds.length === 0) return [] as DivisionEntryRow[];
   const { data, error } = await supabase
@@ -286,6 +324,12 @@ export async function insertDivisionEntries(
   const { data, error } = await supabase.from("division_entries").insert(rows).select("id, division_id, label, player_id, team_id");
   if (error) fail(error, "Could not save division entries.");
   return (data || []) as DivisionEntryRow[];
+}
+
+/** Swaps the player behind a singles division entry (e.g. an injury replacement mid-tournament). Existing and future matches for this entry carry over unchanged since they reference the entry id, not the player id. */
+export async function replaceDivisionEntryPlayer(supabase: SupabaseClient, entryId: string, newPlayerId: string, newLabel: string) {
+  const { error } = await supabase.from("division_entries").update({ player_id: newPlayerId, label: newLabel }).eq("id", entryId);
+  if (error) fail(error, "Could not replace the player.");
 }
 
 export async function listMatches(supabase: SupabaseClient, divisionIds: string[]) {

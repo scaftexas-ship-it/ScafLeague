@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Ban, CheckCircle2 } from "lucide-react";
-import { addPlayer, linkUserToPlayer, toggleUserAccess, updateUserRole } from "@/lib/admin-data";
+import { Ban, CheckCircle2, Users } from "lucide-react";
+import { addPlayer, deletePlayer, isPlayerInUse, linkUserToPlayer, toggleUserAccess, updateUserRole } from "@/lib/admin-data";
 import { isServiceRoleMissingError, parsePeopleImportFile, PeopleImportError } from "@/lib/people-import";
 import type { UserRole } from "@/lib/types";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "./use-admin-data";
@@ -35,6 +36,8 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
   const [updatingUserId, setUpdatingUserId] = useState("");
   const [accessMessage, setAccessMessage] = useState("");
 
+  const [playersMessage, setPlayersMessage] = useState("");
+
   async function inviteUser() {
     if (!admin.supabase || !admin.adminUser) return;
     if (!inviteForm.fullName.trim() || !inviteForm.email.trim()) {
@@ -46,9 +49,30 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       return;
     }
 
+    const createPlayerProfile = inviteForm.role === "player" && inviteForm.playerProfileMode === "__new";
+
     setInviting(true);
     setInviteMessage("");
     try {
+      if (admin.serviceRoleConfigured === false) {
+        if (!createPlayerProfile) {
+          setInviteMessage(
+            "Creating logins requires SUPABASE_SERVICE_ROLE_KEY, which isn't configured on this deployment. Add a player profile only, or have them sign up and use Link Existing Login below."
+          );
+          return;
+        }
+        await addPlayer(admin.supabase, {
+          clubId: admin.adminUser.club_id,
+          displayName: inviteForm.fullName,
+          mobileNumber: inviteForm.mobileNumber,
+          rating: inviteForm.rating
+        });
+        await admin.reloadPlayers();
+        setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
+        setInviteMessage("Player profile created. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
+        return;
+      }
+
       const { data: sessionData } = await admin.supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) {
@@ -66,12 +90,25 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           role: inviteForm.role,
           mobileNumber: inviteForm.mobileNumber,
           rating: inviteForm.rating,
-          createPlayerProfile: inviteForm.role === "player" && inviteForm.playerProfileMode === "__new",
+          createPlayerProfile,
           playerProfileId: inviteForm.playerProfileMode !== "__new" && inviteForm.playerProfileMode ? inviteForm.playerProfileMode : undefined
         })
       });
-      const result = await response.json();
+
       if (!response.ok) {
+        const result = await response.json().catch(() => ({ error: "" }));
+        if (response.status === 501 && isServiceRoleMissingError(result.error) && createPlayerProfile) {
+          await addPlayer(admin.supabase, {
+            clubId: admin.adminUser.club_id,
+            displayName: inviteForm.fullName,
+            mobileNumber: inviteForm.mobileNumber,
+            rating: inviteForm.rating
+          });
+          await admin.reloadPlayers();
+          setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
+          setInviteMessage("Player profile created. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
+          return;
+        }
         setInviteMessage(result.error || "Could not invite the user.");
         return;
       }
@@ -93,54 +130,75 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
 
     try {
       const rows = await parsePeopleImportFile(file);
-      const { data: sessionData } = await admin.supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        setImportMessage("Your session expired. Sign in again.");
-        return;
-      }
 
       let imported = 0;
       let profilesOnly = 0;
       let failed = 0;
 
-      for (const row of rows) {
-        const response = await fetch("/api/admin/users/invite/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            email: row.email,
-            fullName: row.fullName,
-            password: row.password,
-            role: row.role,
-            mobileNumber: row.mobileNumber,
-            rating: row.rating,
-            createPlayerProfile: row.createPlayerProfile
-          })
-        });
-
-        if (response.ok) {
-          imported += 1;
-          continue;
-        }
-
-        const result = await response.json().catch(() => ({ error: "" }));
-        if (response.status === 501 && isServiceRoleMissingError(result.error) && row.role === "player" && row.createPlayerProfile) {
-          try {
-            await addPlayer(admin.supabase, {
-              clubId: admin.adminUser.club_id,
-              displayName: row.fullName,
-              mobileNumber: row.mobileNumber || "",
-              rating: row.rating || ""
-            });
-            profilesOnly += 1;
-          } catch {
+      if (admin.serviceRoleConfigured === false) {
+        for (const row of rows) {
+          if (row.role === "player" && row.createPlayerProfile) {
+            try {
+              await addPlayer(admin.supabase, {
+                clubId: admin.adminUser.club_id,
+                displayName: row.fullName,
+                mobileNumber: row.mobileNumber || "",
+                rating: row.rating || ""
+              });
+              profilesOnly += 1;
+            } catch {
+              failed += 1;
+            }
+          } else {
             failed += 1;
           }
-          continue;
+        }
+      } else {
+        const { data: sessionData } = await admin.supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) {
+          setImportMessage("Your session expired. Sign in again.");
+          return;
         }
 
-        failed += 1;
+        for (const row of rows) {
+          const response = await fetch("/api/admin/users/invite/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              email: row.email,
+              fullName: row.fullName,
+              password: row.password,
+              role: row.role,
+              mobileNumber: row.mobileNumber,
+              rating: row.rating,
+              createPlayerProfile: row.createPlayerProfile
+            })
+          });
+
+          if (response.ok) {
+            imported += 1;
+            continue;
+          }
+
+          const result = await response.json().catch(() => ({ error: "" }));
+          if (response.status === 501 && isServiceRoleMissingError(result.error) && row.role === "player" && row.createPlayerProfile) {
+            try {
+              await addPlayer(admin.supabase, {
+                clubId: admin.adminUser.club_id,
+                displayName: row.fullName,
+                mobileNumber: row.mobileNumber || "",
+                rating: row.rating || ""
+              });
+              profilesOnly += 1;
+            } catch {
+              failed += 1;
+            }
+            continue;
+          }
+
+          failed += 1;
+        }
       }
 
       await Promise.all([admin.reloadAppUsers(), admin.reloadPlayers()]);
@@ -210,6 +268,23 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       setAccessMessage(error instanceof Error ? error.message : "Could not update account access.");
     } finally {
       setUpdatingUserId("");
+    }
+  }
+
+  async function removePlayer(playerId: string) {
+    if (!admin.supabase) return;
+    setPlayersMessage("");
+    try {
+      const inUse = await isPlayerInUse(admin.supabase, playerId);
+      if (inUse) {
+        setPlayersMessage("This player is on an active division entry or team. Replace them from Match Management → Roster first, then delete.");
+        return;
+      }
+      await deletePlayer(admin.supabase, playerId);
+      await admin.reloadPlayers();
+      setPlayersMessage("Player deleted.");
+    } catch (error) {
+      setPlayersMessage(error instanceof Error ? error.message : "Could not delete the player.");
     }
   }
 
@@ -414,6 +489,46 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           </div>
         ) : (
           <EmptyState icon={<Ban size={24} aria-hidden />} title="No app users" body="Invite your first user above." />
+        )}
+      </div>
+
+      <div className="card">
+        <div className="section-title">
+          <h2>Players</h2>
+        </div>
+        <StatusBanner message={playersMessage} />
+        {admin.players.length > 0 ? (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Rating</th>
+                  <th>Mobile</th>
+                  <th>Linked login</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {admin.players.map((player) => {
+                  const linkedUser = admin.appUsers.find((user) => user.id === player.user_id);
+                  return (
+                    <tr key={player.id}>
+                      <td>{player.display_name}</td>
+                      <td>{player.rating || <span className="subtle">—</span>}</td>
+                      <td>{player.mobile_number || <span className="subtle">—</span>}</td>
+                      <td>{linkedUser ? linkedUser.email : <span className="subtle">No linked login</span>}</td>
+                      <td>
+                        <ConfirmButton key={player.id} onConfirm={() => removePlayer(player.id)} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState icon={<Users size={24} aria-hidden />} title="No players yet" body="Add one above, or import a file." />
         )}
       </div>
     </div>

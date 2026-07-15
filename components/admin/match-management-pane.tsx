@@ -9,6 +9,7 @@ import type { AdminData } from "./use-admin-data";
 import { MatchEditor } from "./match-editor";
 import type { MatchEditPatch } from "./match-editor";
 import type { MatchRow } from "@/lib/admin-data";
+import { RosterPane } from "./roster-pane";
 
 export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const [savingMatchId, setSavingMatchId] = useState("");
@@ -32,35 +33,38 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const sortedMatches = [...admin.matches].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round);
 
   return (
-    <div className="card stack">
-      <div className="section-title">
-        <h2>Match Management</h2>
-      </div>
-      <StatusBanner message={message} />
-      {sortedMatches.length > 0 ? (
-        <div className="match-list">
-          {sortedMatches.map((match) => {
-            const division = admin.divisions.find((item) => item.id === match.division_id);
-            const entryA = admin.divisionEntries.find((entry) => entry.id === match.entry_a_id);
-            const entryB = admin.divisionEntries.find((entry) => entry.id === match.entry_b_id);
-            const sets = admin.matchSets.filter((set) => set.match_id === match.id);
-            return (
-              <MatchEditor
-                divisionName={division?.name || "Division"}
-                entryA={entryA}
-                entryB={entryB}
-                key={match.id}
-                match={match}
-                onSave={saveMatch}
-                saving={savingMatchId === match.id}
-                sets={sets}
-              />
-            );
-          })}
+    <div className="stack">
+      <RosterPane admin={admin} />
+      <div className="card stack">
+        <div className="section-title">
+          <h2>Match Management</h2>
         </div>
-      ) : (
-        <EmptyState icon={<ClipboardX size={24} aria-hidden />} title="No matches yet" body="Generate a schedule from the Tournaments tab first." />
-      )}
+        <StatusBanner message={message} />
+        {sortedMatches.length > 0 ? (
+          <div className="match-list">
+            {sortedMatches.map((match) => {
+              const division = admin.divisions.find((item) => item.id === match.division_id);
+              const entryA = admin.divisionEntries.find((entry) => entry.id === match.entry_a_id);
+              const entryB = admin.divisionEntries.find((entry) => entry.id === match.entry_b_id);
+              const sets = admin.matchSets.filter((set) => set.match_id === match.id);
+              return (
+                <MatchEditor
+                  divisionName={division?.name || "Division"}
+                  entryA={entryA}
+                  entryB={entryB}
+                  key={match.id}
+                  match={match}
+                  onSave={saveMatch}
+                  saving={savingMatchId === match.id}
+                  sets={sets}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState icon={<ClipboardX size={24} aria-hidden />} title="No matches yet" body="Generate a schedule from the Tournaments tab first." />
+        )}
+      </div>
     </div>
   );
 }

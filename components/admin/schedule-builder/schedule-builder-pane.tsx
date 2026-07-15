@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createDivision, createTeam as createTeamRow, deleteMatches, insertDivisionEntries, insertMatches } from "@/lib/admin-data";
+import { createDivision, createTeam as createTeamRow, deleteDivision, deleteMatches, insertDivisionEntries, insertMatches } from "@/lib/admin-data";
 import type { NewMatchRow } from "@/lib/admin-data";
 import { formatDivisionName } from "@/lib/format";
 import { generateEliminatorSchedule, generateRoundRobinSchedule } from "@/lib/league-rules";
 import type { DivisionEntry, DivisionFormat } from "@/lib/types";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SwitchField } from "@/components/ui/switch-field";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -76,6 +77,18 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
       setMessage(error instanceof Error ? error.message : "Could not create the team.");
     } finally {
       setCreatingTeam(false);
+    }
+  }
+
+  async function removeDivision(divisionId: string) {
+    if (!admin.supabase) return;
+    try {
+      await deleteDivision(admin.supabase, divisionId);
+      if (state.divisionId === divisionId) builder.reset(tournament?.start_date || state.startDate);
+      await admin.reloadDivisions();
+      setMessage("Division deleted.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not delete the division.");
     }
   }
 
@@ -224,17 +237,26 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
 
       {state.step === "setup" ? (
         <div className="form-grid">
-          <label className="field">
-            <span>Select Level</span>
-            <select onChange={(event) => selectDivision(event.target.value)} value={state.divisionId}>
-              <option value="">Create new schedule</option>
-              {admin.divisions.map((division) => (
-                <option key={division.id} value={division.id}>
-                  {division.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="spread">
+            <label className="field">
+              <span>Select Level</span>
+              <select onChange={(event) => selectDivision(event.target.value)} value={state.divisionId}>
+                <option value="">Create new schedule</option>
+                {admin.divisions.map((division) => (
+                  <option key={division.id} value={division.id}>
+                    {division.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {state.divisionId ? (
+              <ConfirmButton
+                confirmLabel={`Delete${divisionMatches.length > 0 ? ` (${divisionMatches.length} match${divisionMatches.length === 1 ? "" : "es"})` : ""}?`}
+                key={state.divisionId}
+                onConfirm={() => removeDivision(state.divisionId)}
+              />
+            ) : null}
+          </div>
 
           <div className="field-row">
             <label className="field">
@@ -249,7 +271,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
 
           <label className="field">
             <span>Number of Sets</span>
-            <input min={1} onChange={(event) => builder.patch({ numberOfSets: event.target.value })} type="number" value={state.numberOfSets} />
+            <input max={3} min={1} onChange={(event) => builder.patch({ numberOfSets: event.target.value })} type="number" value={state.numberOfSets} />
           </label>
 
           <label className="field">

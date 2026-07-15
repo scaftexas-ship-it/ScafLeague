@@ -71,7 +71,10 @@ export function MatchEditor({
 
     if (status === "completed" || status === "score_submitted") {
       nextSets = buildSetsFromForm(scoreForm);
-      const winnerEntryId = getWinnerEntryId(match, nextSets);
+      const winnerEntryId = getWinnerEntryId(
+        { entryAId: match.entry_a_id, entryBId: match.entry_b_id, numberOfSets: match.number_of_sets },
+        nextSets
+      );
       if (!winnerEntryId) {
         setLocalMessage("Enter a valid score with a clear winner.");
         return;

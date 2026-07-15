@@ -1,5 +1,5 @@
-import { SCORING_RULES } from "./types";
-import type { DivisionEntry, Match, MatchSet, Standing } from "./types";
+import { SCORING_RULES } from "./types.ts";
+import type { DivisionEntry, Match, MatchSet, Standing } from "./types.ts";
 
 export function addDays(date: string, days: number) {
   const next = new Date(`${date}T00:00:00.000Z`);
