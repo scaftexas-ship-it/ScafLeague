@@ -25,7 +25,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
   const [teamForm, setTeamForm] = useState({ name: "", playerAId: "", playerBId: "" });
 
   useEffect(() => {
-    if (tournament) builder.patch({ startDate: tournament.start_date });
+    if (tournament) builder.reset(tournament.start_date);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournament?.id]);
 
@@ -120,13 +120,15 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
       return;
     }
 
+    const wasNewDivision = !state.divisionId;
+
     setGenerating(true);
     try {
       const division = state.divisionId
         ? admin.divisions.find((item) => item.id === state.divisionId)!
         : await createDivision(admin.supabase, {
             tournamentId: tournament.id,
-            name: formatDivisionName(state.skillLevel, state.format),
+            name: state.name.trim() || formatDivisionName(state.skillLevel, state.format),
             skillLevel: state.skillLevel.trim() || "All Levels",
             format: state.format
           });
@@ -221,7 +223,11 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
       }
 
       await admin.reloadDivisions();
-      setMessage(`Schedule generated: ${newRows.length} match${newRows.length === 1 ? "" : "es"}.`);
+      setMessage(
+        `Schedule generated: ${newRows.length} match${newRows.length === 1 ? "" : "es"}.` +
+          (wasNewDivision ? " Set up another division for this tournament, or switch tabs when you're done." : "")
+      );
+      if (wasNewDivision) builder.reset(tournament.start_date);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not generate the schedule.");
     } finally {

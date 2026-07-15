@@ -31,7 +31,8 @@ export function MatchCard({
   onClaimForfeit,
   onSubmitScore,
   players,
-  teamMembers
+  teamMembers,
+  tournamentName
 }: {
   canAct: boolean;
   division?: DivisionRow;
@@ -43,6 +44,7 @@ export function MatchCard({
   onSubmitScore: (match: MatchRow, sets: MatchSet[]) => Promise<void>;
   players: PlayerProfileRow[];
   teamMembers: TeamMemberRow[];
+  tournamentName?: string;
 }) {
   const [showScoreForm, setShowScoreForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -94,6 +96,7 @@ export function MatchCard({
       </div>
       <div className="mobile-match-body">
         <div className="match-meta">
+          {tournamentName ? <span className="pill">{tournamentName}</span> : null}
           <span className="pill blue">{division?.name || "Schedule"}</span>
           <span className="pill orange">{formatStatusLabel(match.status)}</span>
         </div>

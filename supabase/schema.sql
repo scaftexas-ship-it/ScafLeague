@@ -17,6 +17,7 @@ create type public.match_status as enum ('scheduled', 'score_submitted', 'comple
 create table public.clubs (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  logo_url text,
   created_at timestamptz not null default now()
 );
 
@@ -231,6 +232,7 @@ alter table public.match_sets enable row level security;
 alter table public.forfeit_claims enable row level security;
 
 create policy "admins manage clubs" on public.clubs for all using (public.is_admin()) with check (public.is_admin());
+create policy "anyone can read club branding" on public.clubs for select using (true);
 create policy "users read own account" on public.users for select using (id = auth.uid() or public.is_admin());
 create policy "admins manage users" on public.users for all using (public.is_admin()) with check (public.is_admin());
 
@@ -291,3 +293,13 @@ create policy "players claim own forfeits" on public.forfeit_claims for insert t
   )
 );
 create policy "admins manage forfeit claims" on public.forfeit_claims for all using (public.is_admin()) with check (public.is_admin());
+
+-- Public storage bucket for the club logo shown in the app header. Public so the logo
+-- renders without an auth header on every page, including the logged-out login screen.
+insert into storage.buckets (id, name, public) values ('club-logos', 'club-logos', true)
+on conflict (id) do nothing;
+
+create policy "anyone can view club logos" on storage.objects for select using (bucket_id = 'club-logos');
+create policy "admins manage club logos" on storage.objects for all
+  using (bucket_id = 'club-logos' and public.is_admin())
+  with check (bucket_id = 'club-logos' and public.is_admin());

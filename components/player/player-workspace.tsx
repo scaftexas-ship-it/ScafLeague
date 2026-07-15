@@ -9,7 +9,7 @@ import {
   getCurrentAppUser,
   insertForfeitClaim,
   listDivisionEntries,
-  listDivisions,
+  listDivisionsForTournaments,
   listMatches,
   listStandings,
   listTournaments,
@@ -30,7 +30,7 @@ export function PlayerWorkspace() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
-  const [tournament, setTournament] = useState<TournamentRow | null>(null);
+  const [tournaments, setTournaments] = useState<TournamentRow[]>([]);
   const [divisions, setDivisions] = useState<DivisionRow[]>([]);
   const [entries, setEntries] = useState<DivisionEntryRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
@@ -66,15 +66,14 @@ export function PlayerWorkspace() {
         return;
       }
 
-      const tournaments = await listTournaments(supabase, appUser.club_id);
-      const currentTournament = tournaments[0];
-      if (!currentTournament) {
+      const loadedTournaments = await listTournaments(supabase, appUser.club_id);
+      if (loadedTournaments.length === 0) {
         setMessage("No tournament has been created yet.");
         return;
       }
-      setTournament(currentTournament);
+      setTournaments(loadedTournaments);
 
-      const loadedDivisions = await listDivisions(supabase, currentTournament.id);
+      const loadedDivisions = await listDivisionsForTournaments(supabase, loadedTournaments.map((item) => item.id));
       setDivisions(loadedDivisions);
       const divisionIds = loadedDivisions.map((division) => division.id);
       if (divisionIds.length === 0) {
@@ -186,11 +185,17 @@ export function PlayerWorkspace() {
     setStandings(await listStandings(supabase, divisionIds));
   }
 
+  function tournamentForDivision(divisionId: string) {
+    const division = divisions.find((item) => item.id === divisionId);
+    if (!division) return undefined;
+    return tournaments.find((item) => item.id === division.tournament_id);
+  }
+
   return (
     <>
       <section className="player-mobile-header">
         <div>
-          <p className="eyebrow">{tournament?.name || "Tournament"}</p>
+          <p className="eyebrow">{tournaments.length > 0 ? tournaments.map((item) => item.name).join(" · ") : "Tournament"}</p>
           <h1>My Schedule</h1>
           <StatusBanner testId="player-status" message={message} />
           {message.startsWith("Sign in") ? (
@@ -222,6 +227,7 @@ export function PlayerWorkspace() {
                   onSubmitScore={submitScore}
                   players={allPlayers}
                   teamMembers={teamMembers}
+                  tournamentName={tournamentForDivision(match.division_id)?.name}
                 />
               ))}
             </div>
@@ -243,9 +249,11 @@ export function PlayerWorkspace() {
                 const division = divisions.find((item) => item.id === match.division_id);
                 const entryA = entries.find((entry) => entry.id === match.entry_a_id);
                 const entryB = entries.find((entry) => entry.id === match.entry_b_id);
+                const matchTournament = tournamentForDivision(match.division_id);
                 return (
                   <article className="match-card" key={match.id}>
                     <div className="match-meta">
+                      {matchTournament ? <span className="pill">{matchTournament.name}</span> : null}
                       <span className="pill blue">{division?.name || "Schedule"}</span>
                       <span className="pill">{match.round_label || `Round ${match.round}`}</span>
                       <span className="pill">To {match.target_score}</span>

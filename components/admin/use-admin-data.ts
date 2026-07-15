@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import {
+  getClub,
   getCurrentAppUser,
   listAppUsers,
   listDivisionEntries,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/admin-data";
 import type {
   AppUserRow,
+  ClubRow,
   DivisionEntryRow,
   DivisionRow,
   MatchRow,
@@ -40,6 +42,7 @@ export function useAdminData() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   const [adminUser, setAdminUser] = useState<AppUserRow | null>(null);
+  const [club, setClub] = useState<ClubRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("Checking admin access...");
   const [serviceRoleConfigured, setServiceRoleConfigured] = useState<boolean | null>(null);
@@ -99,14 +102,16 @@ export function useAdminData() {
         .then((body) => setServiceRoleConfigured(Boolean(body.serviceRoleConfigured)))
         .catch(() => setServiceRoleConfigured(false));
 
-      const [playerRows, userRows, teamRows] = await Promise.all([
+      const [playerRows, userRows, teamRows, clubRow] = await Promise.all([
         listPlayers(supabase, user.club_id),
         listAppUsers(supabase, user.club_id),
-        listTeams(supabase, user.club_id)
+        listTeams(supabase, user.club_id),
+        getClub(supabase, user.club_id)
       ]);
       setPlayers(playerRows);
       setAppUsers(userRows);
       setTeams(teamRows);
+      setClub(clubRow);
       if (teamRows.length > 0) setTeamMembers(await listTeamMembers(supabase, teamRows.map((team) => team.id)));
 
       const tournamentRows = await listTournaments(supabase, user.club_id);
@@ -163,9 +168,15 @@ export function useAdminData() {
 
   const reloadCurrentDivisions = useCallback(() => reloadDivisions(selectedTournamentId), [reloadDivisions, selectedTournamentId]);
 
+  const reloadClub = useCallback(async () => {
+    if (!supabase || !adminUser) return;
+    setClub(await getClub(supabase, adminUser.club_id));
+  }, [supabase, adminUser]);
+
   return {
     supabase,
     adminUser,
+    club,
     loading,
     message,
     setMessage,
@@ -185,7 +196,8 @@ export function useAdminData() {
     reloadDivisions: reloadCurrentDivisions,
     reloadPlayers,
     reloadAppUsers,
-    reloadTeams
+    reloadTeams,
+    reloadClub
   };
 }
 

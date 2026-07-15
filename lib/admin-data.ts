@@ -13,6 +13,12 @@ import type { DivisionFormat, MatchStatus, Sport, UserRole } from "./types";
  * to read independent of any component.
  */
 
+export type ClubRow = {
+  id: string;
+  name: string;
+  logo_url: string | null;
+};
+
 export type TournamentRow = {
   id: string;
   club_id: string;
@@ -116,6 +122,35 @@ export async function getCurrentAppUser(supabase: SupabaseClient) {
   return data as AppUserRow | null;
 }
 
+export async function getClub(supabase: SupabaseClient, clubId: string) {
+  const { data, error } = await supabase.from("clubs").select("id, name, logo_url").eq("id", clubId).maybeSingle();
+  if (error) fail(error, "Could not load the club.");
+  return data as ClubRow | null;
+}
+
+const LOGO_BUCKET = "club-logos";
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+
+/** Uploads a logo image to the public club-logos bucket and points clubs.logo_url at it, cache-busted so the header picks up the change immediately. */
+export async function uploadClubLogo(supabase: SupabaseClient, clubId: string, file: File) {
+  if (!file.type.startsWith("image/")) throw new Error("Choose an image file (PNG, JPG, SVG, or WebP).");
+  if (file.size > MAX_LOGO_BYTES) throw new Error("Logo must be under 2 MB.");
+
+  const extension = file.name.split(".").pop() || "png";
+  const path = `${clubId}/logo.${extension}`;
+
+  const upload = await supabase.storage.from(LOGO_BUCKET).upload(path, file, { upsert: true, cacheControl: "3600" });
+  if (upload.error) fail(upload.error, "Could not upload the logo.");
+
+  const { data: publicUrlData } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path);
+  const logoUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+
+  const { error } = await supabase.from("clubs").update({ logo_url: logoUrl }).eq("id", clubId);
+  if (error) fail(error, "Could not save the logo.");
+
+  return logoUrl;
+}
+
 export async function listTournaments(supabase: SupabaseClient, clubId: string) {
   const { data, error } = await supabase
     .from("tournaments")
@@ -157,6 +192,18 @@ export async function listDivisions(supabase: SupabaseClient, tournamentId: stri
     .from("divisions")
     .select("id, tournament_id, name, skill_level, format")
     .eq("tournament_id", tournamentId)
+    .order("created_at", { ascending: true });
+  if (error) fail(error, "Could not load divisions.");
+  return (data || []) as DivisionRow[];
+}
+
+/** Same as listDivisions but across every tournament given -- used by the player workspace, since a player can be entered in divisions across multiple tournaments (different sports) at once. */
+export async function listDivisionsForTournaments(supabase: SupabaseClient, tournamentIds: string[]) {
+  if (tournamentIds.length === 0) return [] as DivisionRow[];
+  const { data, error } = await supabase
+    .from("divisions")
+    .select("id, tournament_id, name, skill_level, format")
+    .in("tournament_id", tournamentIds)
     .order("created_at", { ascending: true });
   if (error) fail(error, "Could not load divisions.");
   return (data || []) as DivisionRow[];

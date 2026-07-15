@@ -15,9 +15,11 @@ export function AppHeader() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [role, setRole] = useState<UserRole | null>(null);
   const [checked, setChecked] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     void loadRole();
+    void loadLogo();
     const {
       data: { subscription }
     } = supabase?.auth.onAuthStateChange(() => {
@@ -29,6 +31,12 @@ export function AppHeader() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function loadLogo() {
+    if (!supabase) return;
+    const { data } = await supabase.from("clubs").select("logo_url").limit(1).maybeSingle();
+    setLogoUrl((data as { logo_url: string | null } | null)?.logo_url || null);
+  }
 
   async function loadRole() {
     if (!supabase) {
@@ -55,7 +63,7 @@ export function AppHeader() {
   return (
     <header className="topbar">
       <Link className="brand" href="/">
-        <Trophy size={22} aria-hidden />
+        {logoUrl ? <img alt="" className="brand-logo" src={logoUrl} /> : <Trophy size={22} aria-hidden />}
         <span>SCAF League</span>
       </Link>
       <nav className="nav-actions" aria-label="Primary">
