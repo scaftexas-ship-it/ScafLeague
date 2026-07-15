@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, ShieldCheck, Trophy, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CalendarDays, LogOut, ShieldCheck, Trophy, UserRound } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import type { UserRole } from "@/lib/types";
 
@@ -12,10 +13,12 @@ type RoleRow = {
 };
 
 export function AppHeader() {
+  const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [role, setRole] = useState<UserRole | null>(null);
   const [checked, setChecked] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     void loadRole();
@@ -60,6 +63,15 @@ export function AppHeader() {
     setChecked(true);
   }
 
+  async function signOut() {
+    if (!supabase) return;
+    setSigningOut(true);
+    await supabase.auth.signOut();
+    setRole(null);
+    setSigningOut(false);
+    router.replace("/login");
+  }
+
   return (
     <header className="topbar">
       <Link className="brand" href="/">
@@ -77,9 +89,15 @@ export function AppHeader() {
             <UserRound size={20} />
           </Link>
         ) : null}
-        <Link className="icon-link" href="/login" aria-label="Login">
-          <CalendarDays size={20} />
-        </Link>
+        {checked && role ? (
+          <button className="icon-link" disabled={signingOut} onClick={signOut} aria-label="Sign out" type="button">
+            <LogOut size={20} />
+          </button>
+        ) : (
+          <Link className="icon-link" href="/login" aria-label="Login">
+            <CalendarDays size={20} />
+          </Link>
+        )}
       </nav>
     </header>
   );

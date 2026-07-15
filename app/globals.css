@@ -172,6 +172,15 @@ button {
   height: 38px;
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.icon-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .icon-link:hover {
