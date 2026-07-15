@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogIn, ShieldCheck, UserPlus, UserRound } from "lucide-react";
+import { claimPlayerProfileIfEligible } from "@/lib/admin-data";
 import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { UserRole } from "@/lib/types";
@@ -52,10 +53,14 @@ export function AuthPanel() {
 
   async function getRegisteredUser(userId: string) {
     if (!supabase) return null;
-    const { data, error } = (await supabase.from("users").select("id, role, full_name, email, access_disabled").eq("id", userId).maybeSingle()) as {
+    const { data: initial, error } = (await supabase.from("users").select("id, role, full_name, email, access_disabled").eq("id", userId).maybeSingle()) as {
       data: AppUser | null;
       error: { message?: string } | null;
     };
+
+    // No public.users row yet -- try auto-claiming a player profile an admin
+    // already added under this same email before giving up.
+    const data = !error && !initial ? await claimPlayerProfileIfEligible(supabase) : initial;
 
     if (error || !data) {
       await supabase.auth.signOut();
@@ -104,20 +109,34 @@ export function AuthPanel() {
     setSigningIn(true);
     setMessage("");
     const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
-    setSigningIn(false);
 
     if (error) {
+      setSigningIn(false);
       setMessage(error.message);
       return;
     }
 
     setPassword("");
+
+    // If email confirmation is off, we already have a session -- try to
+    // activate them immediately instead of sending them back to sign in.
+    if (data.session && data.user) {
+      const registeredUser = await getRegisteredUser(data.user.id);
+      setSigningIn(false);
+      if (registeredUser) {
+        setMode("signin");
+        setCurrentUser(registeredUser);
+        setMessage(`Signed in as ${registeredUser.full_name}.`);
+        openRoleHome(registeredUser);
+        return;
+      }
+      setMode("signin");
+      return;
+    }
+
+    setSigningIn(false);
     setMode("signin");
-    setMessage(
-      data.session
-        ? "Account created. Ask an admin to add your account before you can access the league (the first admin runs supabase/promote-admins.sql)."
-        : "Account created. Check your email to confirm it, then ask an admin to add your account before you can access the league."
-    );
+    setMessage("Account created. Check your email to confirm it, then ask an admin to add your account before you can access the league.");
   }
 
   async function signOut() {

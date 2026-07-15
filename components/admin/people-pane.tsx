@@ -64,12 +64,13 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
         await addPlayer(admin.supabase, {
           clubId: admin.adminUser.club_id,
           displayName: inviteForm.fullName,
+          email: inviteForm.email,
           mobileNumber: inviteForm.mobileNumber,
           rating: inviteForm.rating
         });
         await admin.reloadPlayers();
         setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
-        setInviteMessage("Player profile created. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
+        setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
         return;
       }
 
@@ -101,12 +102,13 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           await addPlayer(admin.supabase, {
             clubId: admin.adminUser.club_id,
             displayName: inviteForm.fullName,
+            email: inviteForm.email,
             mobileNumber: inviteForm.mobileNumber,
             rating: inviteForm.rating
           });
           await admin.reloadPlayers();
           setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
-          setInviteMessage("Player profile created. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
+          setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
           return;
         }
         setInviteMessage(result.error || "Could not invite the user.");
@@ -142,6 +144,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
               await addPlayer(admin.supabase, {
                 clubId: admin.adminUser.club_id,
                 displayName: row.fullName,
+                email: row.email,
                 mobileNumber: row.mobileNumber || "",
                 rating: row.rating || ""
               });
@@ -187,6 +190,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
               await addPlayer(admin.supabase, {
                 clubId: admin.adminUser.club_id,
                 displayName: row.fullName,
+                email: row.email,
                 mobileNumber: row.mobileNumber || "",
                 rating: row.rating || ""
               });
@@ -503,6 +507,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Email</th>
                   <th>Rating</th>
                   <th>Mobile</th>
                   <th>Linked login</th>
@@ -515,9 +520,18 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                   return (
                     <tr key={player.id}>
                       <td>{player.display_name}</td>
+                      <td>{player.email || <span className="subtle">—</span>}</td>
                       <td>{player.rating || <span className="subtle">—</span>}</td>
                       <td>{player.mobile_number || <span className="subtle">—</span>}</td>
-                      <td>{linkedUser ? linkedUser.email : <span className="subtle">No linked login</span>}</td>
+                      <td>
+                        {linkedUser ? (
+                          linkedUser.email
+                        ) : player.email ? (
+                          <span className="subtle">Not yet -- will auto-link if they sign up with this email</span>
+                        ) : (
+                          <span className="subtle">No linked login</span>
+                        )}
+                      </td>
                       <td>
                         <ConfirmButton key={player.id} onConfirm={() => removePlayer(player.id)} />
                       </td>

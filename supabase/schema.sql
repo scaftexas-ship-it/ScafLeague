@@ -36,6 +36,7 @@ create table public.player_profiles (
   user_id uuid unique references public.users(id) on delete cascade,
   club_id uuid not null references public.clubs(id) on delete cascade,
   display_name text not null,
+  email text,
   mobile_number text,
   rating text,
   created_at timestamptz not null default now()
@@ -235,10 +236,29 @@ create policy "admins manage clubs" on public.clubs for all using (public.is_adm
 create policy "anyone can read club branding" on public.clubs for select using (true);
 create policy "users read own account" on public.users for select using (id = auth.uid() or public.is_admin());
 create policy "admins manage users" on public.users for all using (public.is_admin()) with check (public.is_admin());
+-- Lets a freshly self-signed-up auth user create their own public.users row, gated
+-- entirely by an admin having already pre-added this exact email as a player (an
+-- unclaimed profile, or one this same user already claimed on a prior attempt) --
+-- role is always forced to 'player'. This must run BEFORE the player_profiles claim
+-- below, not after: player_profiles.user_id is a foreign key into this table, so the
+-- claim update would otherwise violate that constraint.
+create policy "players self-provision after claiming a profile" on public.users for insert to authenticated with check (
+  id = auth.uid()
+  and role = 'player'
+  and access_disabled = false
+  and exists (select 1 from public.player_profiles where email = auth.jwt() ->> 'email' and (user_id is null or user_id = auth.uid()))
+);
 
 create policy "authenticated read league data" on public.player_profiles for select to authenticated using (true);
 create policy "admins manage player profiles" on public.player_profiles for all using (public.is_admin()) with check (public.is_admin());
 create policy "players update own profile" on public.player_profiles for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- Lets a self-signed-up auth user claim an unclaimed player profile whose email an
+-- admin already entered (via Add User And Player or bulk import), or reclaim one
+-- they already own -- the actual entry point into the club is still admin-controlled
+-- since it requires that pre-existing email match.
+create policy "players claim own profile by email" on public.player_profiles for update using (
+  email = auth.jwt() ->> 'email' and (user_id is null or user_id = auth.uid())
+) with check (user_id = auth.uid());
 
 create policy "authenticated read tournaments" on public.tournaments for select to authenticated using (true);
 create policy "admins manage tournaments" on public.tournaments for all using (public.is_admin()) with check (public.is_admin());

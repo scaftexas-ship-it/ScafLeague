@@ -41,6 +41,7 @@ export type PlayerProfileRow = {
   club_id: string;
   user_id: string | null;
   display_name: string;
+  email: string | null;
   mobile_number: string | null;
   rating: string | null;
 };
@@ -120,6 +121,57 @@ export async function getCurrentAppUser(supabase: SupabaseClient) {
     .maybeSingle();
   if (error) fail(error, "Could not load your account.");
   return data as AppUserRow | null;
+}
+
+/**
+ * Auto-activates a self-signed-up login: if the signed-in user's email
+ * matches a player_profiles row an admin already added (unclaimed, or one
+ * they're re-claiming after a partial failure), attaches it and creates
+ * their public.users row -- no admin "Link Existing Login" step needed.
+ * Entirely gated by RLS ("players claim own profile by email" and "players
+ * self-provision after claiming a profile"): this can't grant access to
+ * anyone the admin hasn't already pre-added by email, it's just doing from
+ * the client what the database would allow anyway. Returns the resulting
+ * account, or null if there's no matching profile to claim.
+ */
+export async function claimPlayerProfileIfEligible(supabase: SupabaseClient): Promise<AppUserRow | null> {
+  const { data: authData } = await supabase.auth.getUser();
+  const authUser = authData.user;
+  if (!authUser?.email) return null;
+
+  const { data: profile } = await supabase
+    .from("player_profiles")
+    .select("id, club_id, display_name, user_id")
+    .eq("email", authUser.email)
+    .or(`user_id.is.null,user_id.eq.${authUser.id}`)
+    .maybeSingle();
+  if (!profile) return null;
+
+  // The users row must exist before player_profiles.user_id (a foreign key into
+  // it) can be set, so create it first.
+  let appUser = await getCurrentAppUser(supabase);
+  if (!appUser) {
+    const { data: created, error: insertError } = await supabase
+      .from("users")
+      .insert({
+        id: authUser.id,
+        club_id: profile.club_id,
+        role: "player",
+        full_name: profile.display_name,
+        email: authUser.email,
+        access_disabled: false
+      })
+      .select("id, club_id, role, full_name, email, access_disabled")
+      .single();
+    if (insertError) return null;
+    appUser = created as AppUserRow;
+  }
+
+  if (!profile.user_id) {
+    await supabase.from("player_profiles").update({ user_id: authUser.id }).eq("id", profile.id);
+  }
+
+  return appUser;
 }
 
 export async function getClub(supabase: SupabaseClient, clubId: string) {
@@ -231,7 +283,7 @@ export async function deleteDivision(supabase: SupabaseClient, divisionId: strin
 export async function listPlayers(supabase: SupabaseClient, clubId: string) {
   const { data, error } = await supabase
     .from("player_profiles")
-    .select("id, club_id, user_id, display_name, mobile_number, rating")
+    .select("id, club_id, user_id, display_name, email, mobile_number, rating")
     .eq("club_id", clubId)
     .order("display_name", { ascending: true });
   if (error) fail(error, "Could not load players.");
@@ -240,17 +292,18 @@ export async function listPlayers(supabase: SupabaseClient, clubId: string) {
 
 export async function addPlayer(
   supabase: SupabaseClient,
-  input: { clubId: string; displayName: string; mobileNumber: string; rating: string }
+  input: { clubId: string; displayName: string; email?: string; mobileNumber: string; rating: string }
 ) {
   const { data, error } = await supabase
     .from("player_profiles")
     .insert({
       club_id: input.clubId,
       display_name: input.displayName,
+      email: input.email?.trim() || null,
       mobile_number: input.mobileNumber.trim() || null,
       rating: input.rating.trim() || null
     })
-    .select("id, club_id, user_id, display_name, mobile_number, rating")
+    .select("id, club_id, user_id, display_name, email, mobile_number, rating")
     .single();
   if (error) fail(error, "Could not add the player.");
   return data as PlayerProfileRow;

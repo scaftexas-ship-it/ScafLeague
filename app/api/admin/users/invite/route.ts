@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
   if (playerProfileId) {
     const { error: profileError } = await serviceClient
       .from("player_profiles")
-      .update({ user_id: authResult.data.user.id, mobile_number: mobileNumber })
+      .update({ user_id: authResult.data.user.id, email, mobile_number: mobileNumber })
       .eq("id", playerProfileId)
       .eq("club_id", adminUser.club_id);
 
@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
       user_id: authResult.data.user.id,
       club_id: adminUser.club_id,
       display_name: fullName,
+      email,
       mobile_number: mobileNumber,
       rating
     });
