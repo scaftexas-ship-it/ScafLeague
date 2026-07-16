@@ -76,7 +76,7 @@ export function AppHeader() {
     <header className="topbar">
       <Link className="brand" href="/">
         {logoUrl ? <img alt="" className="brand-logo" src={logoUrl} /> : <Trophy size={22} aria-hidden />}
-        <span>SCAF League</span>
+        <span>Sports and Cultural Association of Fortbend</span>
       </Link>
       <nav className="nav-actions" aria-label="Primary">
         {checked && role === "admin" ? (
