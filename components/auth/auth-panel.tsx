@@ -34,7 +34,10 @@ export function AuthPanel() {
     // root URL, not necessarily here) and redirected us here with this flag,
     // since a plain existing-session check would otherwise just sign them in
     // and skip past the "set new password" step entirely.
-    if (typeof window !== "undefined" && sessionStorage.getItem("scaf-password-recovery") === "1") {
+    const isRecoveryLink =
+      typeof window !== "undefined" && (window.location.search.includes("type=recovery") || window.location.hash.includes("type=recovery"));
+
+    if (isRecoveryLink || (typeof window !== "undefined" && sessionStorage.getItem("scaf-password-recovery") === "1")) {
       sessionStorage.removeItem("scaf-password-recovery");
       setMode("reset");
       setChecking(false);
@@ -43,11 +46,16 @@ export function AuthPanel() {
       void checkExistingSession();
     }
 
+    // Under Supabase's PKCE flow, completing a recovery link exchange fires
+    // SIGNED_IN rather than PASSWORD_RECOVERY, so both events are handled the
+    // same way here -- the isRecoveryLink check above is what actually
+    // decides whether this is a password reset.
     const {
       data: { subscription }
     } = supabase?.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
+      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && isRecoveryLink)) {
         setMode("reset");
+        setChecking(false);
         setMessage("Enter a new password.");
       }
     }) || { data: { subscription: undefined } };

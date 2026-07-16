@@ -25,6 +25,18 @@ export function HomeDashboard() {
     // Supabase's password-reset email links redirect to the site's root URL,
     // not necessarily /login -- if that lands here, hand off to /login's
     // "set new password" form instead of treating it as a normal sign-in.
+    // Under the PKCE flow, completing the recovery link exchange fires
+    // SIGNED_IN rather than PASSWORD_RECOVERY, so check the URL itself
+    // rather than relying on which event comes back.
+    const isRecoveryLink =
+      typeof window !== "undefined" && (window.location.search.includes("type=recovery") || window.location.hash.includes("type=recovery"));
+
+    if (isRecoveryLink) {
+      sessionStorage.setItem("scaf-password-recovery", "1");
+      router.replace("/login");
+      return;
+    }
+
     const {
       data: { subscription }
     } = supabase?.auth.onAuthStateChange((event) => {
