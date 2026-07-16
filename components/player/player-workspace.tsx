@@ -24,7 +24,7 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
 import type { StandingRow } from "@/lib/admin-data";
-import type { MatchSet } from "@/lib/types";
+import type { MatchSet, Sport } from "@/lib/types";
 
 export function PlayerWorkspace() {
   const router = useRouter();
@@ -40,6 +40,8 @@ export function PlayerWorkspace() {
   const [teamMembers, setTeamMembers] = useState<TeamMemberRow[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [message, setMessage] = useState("Loading player schedule...");
+  const [sportFilter, setSportFilter] = useState<Sport | "all">("all");
+  const [tournamentFilter, setTournamentFilter] = useState<string>("all");
 
   useEffect(() => {
     void load();
@@ -191,6 +193,20 @@ export function PlayerWorkspace() {
     return tournaments.find((item) => item.id === division.tournament_id);
   }
 
+  const availableSports = Array.from(new Set(tournaments.map((tournament) => tournament.sport)));
+  const sportTournaments = tournaments.filter((tournament) => sportFilter === "all" || tournament.sport === sportFilter);
+  const visibleTournamentIds = new Set(tournamentFilter === "all" ? sportTournaments.map((tournament) => tournament.id) : [tournamentFilter]);
+  const visibleDivisionIds = new Set(divisions.filter((division) => visibleTournamentIds.has(division.tournament_id)).map((division) => division.id));
+
+  function handleSportFilterChange(value: string) {
+    setSportFilter(value as Sport | "all");
+    setTournamentFilter("all");
+  }
+
+  const visibleMyMatches = myMatches.filter((match) => visibleDivisionIds.has(match.division_id));
+  const visibleMatches = matches.filter((match) => visibleDivisionIds.has(match.division_id));
+  const visibleDivisions = divisions.filter((division) => visibleDivisionIds.has(division.id));
+
   return (
     <>
       <section className="player-mobile-header">
@@ -206,15 +222,44 @@ export function PlayerWorkspace() {
         </div>
       </section>
 
+      {tournaments.length > 1 ? (
+        <section className="card">
+          <div className="field-row">
+            <label className="field">
+              <span>Sport</span>
+              <select onChange={(event) => handleSportFilterChange(event.target.value)} value={sportFilter}>
+                <option value="all">All sports</option>
+                {availableSports.map((sport) => (
+                  <option key={sport} value={sport}>
+                    {sport[0].toUpperCase() + sport.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Tournament</span>
+              <select onChange={(event) => setTournamentFilter(event.target.value)} value={tournamentFilter}>
+                <option value="all">All tournaments</option>
+                {sportTournaments.map((tournament) => (
+                  <option key={tournament.id} value={tournament.id}>
+                    {tournament.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </section>
+      ) : null}
+
       <section className="stack">
         <div className="card">
           <div className="section-title">
             <h2>My Games</h2>
             <Send size={22} aria-hidden />
           </div>
-          {myMatches.length > 0 ? (
+          {visibleMyMatches.length > 0 ? (
             <div className="match-list">
-              {myMatches.map((match) => (
+              {visibleMyMatches.map((match) => (
                 <MatchCard
                   canAct={myEntryIds.length === 0 || myEntryIds.includes(match.entry_a_id) || myEntryIds.includes(match.entry_b_id)}
                   division={divisions.find((division) => division.id === match.division_id)}
@@ -243,9 +288,9 @@ export function PlayerWorkspace() {
             <h2>All Games</h2>
             <ClipboardList size={22} aria-hidden />
           </div>
-          {matches.length > 0 ? (
+          {visibleMatches.length > 0 ? (
             <div className="match-list">
-              {matches.map((match) => {
+              {visibleMatches.map((match) => {
                 const division = divisions.find((item) => item.id === match.division_id);
                 const entryA = entries.find((entry) => entry.id === match.entry_a_id);
                 const entryB = entries.find((entry) => entry.id === match.entry_b_id);
@@ -278,7 +323,7 @@ export function PlayerWorkspace() {
           )}
         </div>
 
-        <PointsTable divisions={divisions} entries={entries} standings={standings} />
+        <PointsTable divisions={visibleDivisions} entries={entries} standings={standings} />
       </section>
     </>
   );
