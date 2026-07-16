@@ -81,17 +81,22 @@ export function AuthPanel() {
       return;
     }
 
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      setChecking(false);
-      return;
-    }
+    // If this throws (a stale/corrupted stored session, a network blip),
+    // checking must still be cleared -- otherwise every input on this form
+    // stays disabled forever, since they're all disabled={checking}.
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) return;
 
-    const registeredUser = await getRegisteredUser(data.user.id);
-    setChecking(false);
-    if (!registeredUser) return;
-    setCurrentUser(registeredUser);
-    setMessage(`Signed in as ${registeredUser.full_name}.`);
+      const registeredUser = await getRegisteredUser(data.user.id);
+      if (!registeredUser) return;
+      setCurrentUser(registeredUser);
+      setMessage(`Signed in as ${registeredUser.full_name}.`);
+    } catch {
+      // No usable session -- fall through to a normal signed-out form.
+    } finally {
+      setChecking(false);
+    }
   }
 
   async function getRegisteredUser(userId: string) {
