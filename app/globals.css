@@ -526,6 +526,36 @@ button {
   color: var(--color-text-faint);
 }
 
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 38px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 6px;
+}
+
+.field-error {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-danger);
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

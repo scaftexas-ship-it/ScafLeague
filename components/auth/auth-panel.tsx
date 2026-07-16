@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, LogIn, ShieldCheck, UserPlus, UserRound } from "lucide-react";
+import { Eye, EyeOff, KeyRound, LogIn, ShieldCheck, UserPlus, UserRound } from "lucide-react";
 import { claimPlayerProfileIfEligible } from "@/lib/admin-data";
 import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -22,7 +22,11 @@ export function AuthPanel() {
   const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "reset">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [message, setMessage] = useState(hasSupabaseConfig() ? "" : "Add Supabase credentials to enable live sign-in.");
   const [checking, setChecking] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
@@ -156,6 +160,7 @@ export function AuthPanel() {
     }
 
     setPassword("");
+    setConfirmPassword("");
 
     // If email confirmation is off, we already have a session -- try to
     // activate them immediately instead of sending them back to sign in.
@@ -209,6 +214,7 @@ export function AuthPanel() {
     }
 
     setNewPassword("");
+    setConfirmNewPassword("");
     const registeredUser = await getRegisteredUser(data.user.id);
     setSigningIn(false);
     setMode("signin");
@@ -224,8 +230,12 @@ export function AuthPanel() {
     await supabase.auth.signOut();
     setCurrentUser(null);
     setPassword("");
+    setConfirmPassword("");
     setMessage("Signed out.");
   }
+
+  const signupPasswordsMismatch = mode === "signup" && confirmPassword.length > 0 && password !== confirmPassword;
+  const resetPasswordsMismatch = mode === "reset" && confirmNewPassword.length > 0 && newPassword !== confirmNewPassword;
 
   return (
     <div className="form-grid">
@@ -247,27 +257,83 @@ export function AuthPanel() {
       {!currentUser && (mode === "signin" || mode === "signup") ? (
         <label className="field">
           <span>Password</span>
-          <input
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            disabled={checking}
-            minLength={6}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            value={password}
-          />
+          <div className="password-field">
+            <input
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              disabled={checking}
+              minLength={6}
+              onChange={(event) => setPassword(event.target.value)}
+              type={mode === "signup" && showPassword ? "text" : "password"}
+              value={password}
+            />
+            {mode === "signup" ? (
+              <button
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="password-toggle"
+                onClick={() => setShowPassword((current) => !current)}
+                tabIndex={-1}
+                type="button"
+              >
+                {showPassword ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+              </button>
+            ) : null}
+          </div>
+        </label>
+      ) : null}
+      {!currentUser && mode === "signup" ? (
+        <label className="field">
+          <span>Confirm password</span>
+          <div className="password-field">
+            <input
+              autoComplete="new-password"
+              disabled={checking}
+              minLength={6}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              type={showPassword ? "text" : "password"}
+              value={confirmPassword}
+            />
+          </div>
+          {signupPasswordsMismatch ? <span className="field-error">Passwords do not match.</span> : null}
         </label>
       ) : null}
       {!currentUser && mode === "reset" ? (
         <label className="field">
           <span>New password</span>
-          <input
-            autoComplete="new-password"
-            disabled={checking}
-            minLength={6}
-            onChange={(event) => setNewPassword(event.target.value)}
-            type="password"
-            value={newPassword}
-          />
+          <div className="password-field">
+            <input
+              autoComplete="new-password"
+              disabled={checking}
+              minLength={6}
+              onChange={(event) => setNewPassword(event.target.value)}
+              type={showNewPassword ? "text" : "password"}
+              value={newPassword}
+            />
+            <button
+              aria-label={showNewPassword ? "Hide password" : "Show password"}
+              className="password-toggle"
+              onClick={() => setShowNewPassword((current) => !current)}
+              tabIndex={-1}
+              type="button"
+            >
+              {showNewPassword ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+            </button>
+          </div>
+        </label>
+      ) : null}
+      {!currentUser && mode === "reset" ? (
+        <label className="field">
+          <span>Confirm new password</span>
+          <div className="password-field">
+            <input
+              autoComplete="new-password"
+              disabled={checking}
+              minLength={6}
+              onChange={(event) => setConfirmNewPassword(event.target.value)}
+              type={showNewPassword ? "text" : "password"}
+              value={confirmNewPassword}
+            />
+          </div>
+          {resetPasswordsMismatch ? <span className="field-error">Passwords do not match.</span> : null}
         </label>
       ) : null}
       <div className="toolbar">
@@ -282,7 +348,12 @@ export function AuthPanel() {
             </button>
           </>
         ) : mode === "signup" ? (
-          <button className="button" disabled={checking || signingIn || !email || !password} onClick={signUp} type="button">
+          <button
+            className="button"
+            disabled={checking || signingIn || !email || !password || !confirmPassword || signupPasswordsMismatch}
+            onClick={signUp}
+            type="button"
+          >
             <UserPlus size={18} aria-hidden />
             {signingIn ? "Creating account..." : "Create account"}
           </button>
@@ -292,7 +363,12 @@ export function AuthPanel() {
             {signingIn ? "Sending..." : "Send reset link"}
           </button>
         ) : mode === "reset" ? (
-          <button className="button" disabled={checking || signingIn || !newPassword} onClick={updatePassword} type="button">
+          <button
+            className="button"
+            disabled={checking || signingIn || !newPassword || !confirmNewPassword || resetPasswordsMismatch}
+            onClick={updatePassword}
+            type="button"
+          >
             <KeyRound size={18} aria-hidden />
             {signingIn ? "Updating..." : "Update password"}
           </button>
