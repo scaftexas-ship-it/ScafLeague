@@ -34,8 +34,15 @@ export function AuthPanel() {
     // root URL, not necessarily here) and redirected us here with this flag,
     // since a plain existing-session check would otherwise just sign them in
     // and skip past the "set new password" step entirely.
+    //
+    // Supabase's PKCE redirect only appends "?code=..." here (the
+    // "type=recovery" hint only exists on its intermediate verification URL,
+    // not the final redirect) -- /login is only ever used as the redirectTo
+    // for password resets in this app, so any "code" param landing here means
+    // this is a recovery link.
     const isRecoveryLink =
-      typeof window !== "undefined" && (window.location.search.includes("type=recovery") || window.location.hash.includes("type=recovery"));
+      typeof window !== "undefined" &&
+      (new URLSearchParams(window.location.search).has("code") || window.location.hash.includes("type=recovery"));
 
     if (isRecoveryLink || (typeof window !== "undefined" && sessionStorage.getItem("scaf-password-recovery") === "1")) {
       sessionStorage.removeItem("scaf-password-recovery");

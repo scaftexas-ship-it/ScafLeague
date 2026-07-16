@@ -26,10 +26,12 @@ export function HomeDashboard() {
     // not necessarily /login -- if that lands here, hand off to /login's
     // "set new password" form instead of treating it as a normal sign-in.
     // Under the PKCE flow, completing the recovery link exchange fires
-    // SIGNED_IN rather than PASSWORD_RECOVERY, so check the URL itself
-    // rather than relying on which event comes back.
+    // SIGNED_IN rather than PASSWORD_RECOVERY, and the redirect only carries
+    // a "code" param (no "type" hint survives to here), so check for that
+    // instead of relying on which event comes back.
     const isRecoveryLink =
-      typeof window !== "undefined" && (window.location.search.includes("type=recovery") || window.location.hash.includes("type=recovery"));
+      typeof window !== "undefined" &&
+      (new URLSearchParams(window.location.search).has("code") || window.location.hash.includes("type=recovery"));
 
     if (isRecoveryLink) {
       sessionStorage.setItem("scaf-password-recovery", "1");
