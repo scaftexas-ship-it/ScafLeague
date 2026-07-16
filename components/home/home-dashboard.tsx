@@ -22,7 +22,20 @@ export function HomeDashboard() {
   const [message, setMessage] = useState("Loading dashboard...");
 
   useEffect(() => {
+    // Supabase's password-reset email links redirect to the site's root URL,
+    // not necessarily /login -- if that lands here, hand off to /login's
+    // "set new password" form instead of treating it as a normal sign-in.
+    const {
+      data: { subscription }
+    } = supabase?.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        sessionStorage.setItem("scaf-password-recovery", "1");
+        router.replace("/login");
+      }
+    }) || { data: { subscription: undefined } };
+
     void loadDashboard();
+    return () => subscription?.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogIn, ShieldCheck, UserPlus, UserRound } from "lucide-react";
+import { KeyRound, LogIn, ShieldCheck, UserPlus, UserRound } from "lucide-react";
 import { claimPlayerProfileIfEligible } from "@/lib/admin-data";
 import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -19,16 +19,40 @@ type AppUser = {
 export function AuthPanel() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "reset">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [message, setMessage] = useState(hasSupabaseConfig() ? "" : "Add Supabase credentials to enable live sign-in.");
   const [checking, setChecking] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
 
   useEffect(() => {
-    void checkExistingSession();
+    // Handed off from the home page: its own PASSWORD_RECOVERY listener
+    // already fired (Supabase's reset-password links redirect to the site's
+    // root URL, not necessarily here) and redirected us here with this flag,
+    // since a plain existing-session check would otherwise just sign them in
+    // and skip past the "set new password" step entirely.
+    if (typeof window !== "undefined" && sessionStorage.getItem("scaf-password-recovery") === "1") {
+      sessionStorage.removeItem("scaf-password-recovery");
+      setMode("reset");
+      setChecking(false);
+      setMessage("Enter a new password.");
+    } else {
+      void checkExistingSession();
+    }
+
+    const {
+      data: { subscription }
+    } = supabase?.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setMode("reset");
+        setMessage("Enter a new password.");
+      }
+    }) || { data: { subscription: undefined } };
+
+    return () => subscription?.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -139,6 +163,47 @@ export function AuthPanel() {
     setMessage("Account created. Check your email to confirm it, then ask an admin to add your account before you can access the league.");
   }
 
+  async function sendResetLink() {
+    if (!supabase) return;
+    setSigningIn(true);
+    setMessage("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/login/`
+    });
+    setSigningIn(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMode("signin");
+    setMessage("If that email is registered, a password reset link has been sent.");
+  }
+
+  async function updatePassword() {
+    if (!supabase) return;
+    setSigningIn(true);
+    setMessage("");
+    const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (error || !data.user) {
+      setSigningIn(false);
+      setMessage(error?.message || "Could not update the password.");
+      return;
+    }
+
+    setNewPassword("");
+    const registeredUser = await getRegisteredUser(data.user.id);
+    setSigningIn(false);
+    setMode("signin");
+    if (!registeredUser) return;
+
+    setCurrentUser(registeredUser);
+    setMessage(`Password updated. Signed in as ${registeredUser.full_name}.`);
+    openRoleHome(registeredUser);
+  }
+
   async function signOut() {
     if (!supabase) return;
     await supabase.auth.signOut();
@@ -158,21 +223,38 @@ export function AuthPanel() {
           <span className="pill blue">{currentUser.role}</span>
         </div>
       ) : null}
-      <label className="field">
-        <span>Email</span>
-        <input autoComplete="email" disabled={checking || Boolean(currentUser)} inputMode="email" onChange={(event) => setEmail(event.target.value)} value={email} />
-      </label>
-      <label className="field">
-        <span>Password</span>
-        <input
-          autoComplete={mode === "signup" ? "new-password" : "current-password"}
-          disabled={checking || Boolean(currentUser)}
-          minLength={6}
-          onChange={(event) => setPassword(event.target.value)}
-          type="password"
-          value={password}
-        />
-      </label>
+      {!currentUser && mode !== "reset" ? (
+        <label className="field">
+          <span>Email</span>
+          <input autoComplete="email" disabled={checking} inputMode="email" onChange={(event) => setEmail(event.target.value)} value={email} />
+        </label>
+      ) : null}
+      {!currentUser && (mode === "signin" || mode === "signup") ? (
+        <label className="field">
+          <span>Password</span>
+          <input
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            disabled={checking}
+            minLength={6}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            value={password}
+          />
+        </label>
+      ) : null}
+      {!currentUser && mode === "reset" ? (
+        <label className="field">
+          <span>New password</span>
+          <input
+            autoComplete="new-password"
+            disabled={checking}
+            minLength={6}
+            onChange={(event) => setNewPassword(event.target.value)}
+            type="password"
+            value={newPassword}
+          />
+        </label>
+      ) : null}
       <div className="toolbar">
         {currentUser ? (
           <>
@@ -189,6 +271,16 @@ export function AuthPanel() {
             <UserPlus size={18} aria-hidden />
             {signingIn ? "Creating account..." : "Create account"}
           </button>
+        ) : mode === "forgot" ? (
+          <button className="button" disabled={checking || signingIn || !email} onClick={sendResetLink} type="button">
+            <KeyRound size={18} aria-hidden />
+            {signingIn ? "Sending..." : "Send reset link"}
+          </button>
+        ) : mode === "reset" ? (
+          <button className="button" disabled={checking || signingIn || !newPassword} onClick={updatePassword} type="button">
+            <KeyRound size={18} aria-hidden />
+            {signingIn ? "Updating..." : "Update password"}
+          </button>
         ) : (
           <button className="button" disabled={checking || signingIn || !email || !password} onClick={signIn} type="button">
             <LogIn size={18} aria-hidden />
@@ -196,19 +288,32 @@ export function AuthPanel() {
           </button>
         )}
       </div>
-      {currentUser ? null : (
+      {!currentUser && mode === "signin" ? (
         <button
           className="link-button"
           disabled={checking || signingIn}
           onClick={() => {
-            setMode(mode === "signup" ? "signin" : "signup");
+            setMode("forgot");
             setMessage("");
           }}
           type="button"
         >
-          {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
+          Forgot password?
         </button>
-      )}
+      ) : null}
+      {!currentUser && mode !== "reset" ? (
+        <button
+          className="link-button"
+          disabled={checking || signingIn}
+          onClick={() => {
+            setMode(mode === "signup" ? "signin" : mode === "forgot" ? "signin" : "signup");
+            setMessage("");
+          }}
+          type="button"
+        >
+          {mode === "signup" ? "Already have an account? Sign in" : mode === "forgot" ? "Back to sign in" : "New here? Create an account"}
+        </button>
+      ) : null}
       <p className="subtle">Only users already added by an admin can access the league.</p>
       <StatusBanner message={message} />
     </div>
