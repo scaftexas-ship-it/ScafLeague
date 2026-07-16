@@ -50,9 +50,11 @@ skipped, and the Settings tab tells you which mode you're in.
 
 ## Deploying
 
-`next.config.mjs` is set up for a static export (`output: "export"`) that also works as a GitHub Pages deployment when
-`GITHUB_ACTIONS=true` is set (adds the `/ScafLeague` base path automatically) — see `.github/workflows` in the original repo for a
-reference Pages workflow if you want to wire that back up.
+`next.config.mjs` is set up for a static export (`output: "export"`), deployed to GitHub Pages via
+`.github/workflows/deploy-pages.yml` on every push to `main`. `public/CNAME` points it at a custom domain
+(`league.scaftexas.org`) served from the root — if you fork this without a custom domain, delete `public/CNAME` and add a
+`basePath`/`assetPrefix` in `next.config.mjs` matching your repo name instead, since GitHub's default `<user>.github.io/<repo>/`
+URLs serve from a subpath.
 
 ## A note on verification
 
