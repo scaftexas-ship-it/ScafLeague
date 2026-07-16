@@ -211,7 +211,7 @@ export function PlayerWorkspace() {
     <>
       <section className="player-mobile-header">
         <div>
-          <p className="eyebrow">{tournaments.length > 0 ? tournaments.map((item) => item.name).join(" · ") : "Tournament"}</p>
+          <p className="eyebrow">Tournament</p>
           <h1>My Schedule</h1>
           <StatusBanner testId="player-status" message={message} />
           {message.startsWith("Sign in") ? (
