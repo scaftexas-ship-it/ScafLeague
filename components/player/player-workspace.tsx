@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
+import { TournamentLeaderboard } from "./tournament-leaderboard";
 import type { StandingRow } from "@/lib/admin-data";
 import type { MatchSet, Sport } from "@/lib/types";
 
@@ -207,6 +208,9 @@ export function PlayerWorkspace() {
   const visibleMatches = matches.filter((match) => visibleDivisionIds.has(match.division_id));
   const visibleDivisions = divisions.filter((division) => visibleDivisionIds.has(division.id));
 
+  const singleTournamentId = tournamentFilter !== "all" ? tournamentFilter : sportTournaments.length === 1 ? sportTournaments[0].id : null;
+  const singleTournamentDivisions = singleTournamentId ? divisions.filter((division) => division.tournament_id === singleTournamentId) : [];
+
   return (
     <>
       <section className="player-mobile-header">
@@ -281,6 +285,12 @@ export function PlayerWorkspace() {
           )}
         </div>
       </section>
+
+      {singleTournamentDivisions.length > 0 ? (
+        <section className="stack">
+          <TournamentLeaderboard divisions={singleTournamentDivisions} entries={entries} standings={standings} />
+        </section>
+      ) : null}
 
       <section className="grid two">
         <div className="card">

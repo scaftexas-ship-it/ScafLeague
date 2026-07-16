@@ -425,6 +425,17 @@ button {
   color: var(--color-primary-dark);
 }
 
+.pill-button {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  opacity: 0.5;
+}
+
+.pill-button.on {
+  opacity: 1;
+}
+
 .pill.orange {
   background: var(--color-accent-soft);
   color: #b45309;
