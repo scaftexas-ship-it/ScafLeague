@@ -459,10 +459,10 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             <h2>Upload People</h2>
           </div>
           <div className="toolbar">
-            <a className="button secondary small" href="/api/templates/player-import/xlsx/">
+            <a className="button secondary small" href="/api/templates/player-import/xlsx">
               Download Excel template
             </a>
-            <a className="button secondary small" href="/api/templates/player-import/csv/">
+            <a className="button secondary small" href="/api/templates/player-import/csv">
               Download CSV template
             </a>
           </div>
