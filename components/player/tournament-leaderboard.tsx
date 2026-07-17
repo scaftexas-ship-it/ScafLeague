@@ -91,25 +91,27 @@ export function TournamentLeaderboard({
           <table className="points-table">
             <thead>
               <tr>
+                <th scope="col">Rank</th>
                 <th scope="col">Player / team</th>
                 <th scope="col">Div</th>
                 <th scope="col">M</th>
                 <th scope="col">W</th>
                 <th scope="col">L</th>
                 <th scope="col">P</th>
+                <th scope="col">Avg</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => (
                 <tr key={row.identity}>
-                  <th scope="row">
-                    {index + 1}. {row.label}
-                  </th>
+                  <td>{index + 1}</td>
+                  <th scope="row">{row.label}</th>
                   <td>{row.divisionCount}</td>
                   <td>{row.played}</td>
                   <td>{row.wins}</td>
                   <td>{row.losses}</td>
                   <td>{row.points}</td>
+                  <td>{row.played > 0 ? (row.points / row.played).toFixed(1) : "-"}</td>
                 </tr>
               ))}
             </tbody>

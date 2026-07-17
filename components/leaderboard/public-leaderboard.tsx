@@ -59,7 +59,7 @@ export function PublicLeaderboard() {
   }
 
   return (
-    <section className="hero">
+    <div className="stack">
       <div>
         <p className="eyebrow">Public leaderboard</p>
         <h1>{tournament?.name || "Tournament leaderboard"}</h1>
@@ -76,6 +76,6 @@ export function PublicLeaderboard() {
           </div>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }
