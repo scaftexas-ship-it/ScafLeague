@@ -151,10 +151,23 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
     const failures: Array<{ rowNumber: number; email: string; reason: string }> = [];
 
     try {
-      const { rows, skipped } = await parsePeopleImportFile(file);
+      const { rows: parsedRows, skipped } = await parsePeopleImportFile(file);
       for (const skippedRow of skipped) {
         failures.push({ rowNumber: skippedRow.rowNumber, email: "", reason: skippedRow.reason });
       }
+
+      // Reject rows whose email already belongs to an existing player profile
+      // or login, rather than silently creating a second record for it.
+      const existingEmails = new Set(
+        [...admin.players.map((player) => player.email), ...admin.appUsers.map((user) => user.email)]
+          .filter((email): email is string => Boolean(email))
+          .map((email) => email.trim().toLowerCase())
+      );
+      const rows = parsedRows.filter((row) => {
+        if (!existingEmails.has(row.email)) return true;
+        failures.push({ rowNumber: row.rowNumber, email: row.email, reason: "A player or login with this email already exists." });
+        return false;
+      });
 
       let imported = 0;
       let profilesOnly = 0;
@@ -237,7 +250,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       await Promise.all([admin.reloadAppUsers(), admin.reloadPlayers()]);
       setImportFailures(failures);
 
-      const totalRows = rows.length + skipped.length;
+      const totalRows = parsedRows.length + skipped.length;
       if (profilesOnly > 0) {
         setImportMessage(
           `${imported + profilesOnly} of ${totalRows} imported. ${profilesOnly} were player profiles only (logins skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured).${failures.length > 0 ? ` ${failures.length} failed -- see details below.` : ""}`

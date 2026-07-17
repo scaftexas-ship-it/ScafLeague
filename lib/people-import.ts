@@ -64,7 +64,7 @@ export async function parsePeopleImportFile(file: File): Promise<{ rows: PeopleI
   const extension = file.name.split(".").pop()?.toLowerCase() || "";
   const rawRows = ["xls", "xlsx"].includes(extension) ? await parseSpreadsheet(file) : await parseDelimited(file, extension);
 
-  const rows: PeopleImportRow[] = [];
+  const parsedRows: PeopleImportRow[] = [];
   const skipped: SkippedImportRow[] = [];
 
   rawRows.forEach((raw, index) => {
@@ -72,9 +72,23 @@ export async function parsePeopleImportFile(file: File): Promise<{ rows: PeopleI
     // person sees looking at the file in Excel/Sheets.
     const rowNumber = index + 2;
     const result = normalizeRow(raw, rowNumber);
-    if (result.row) rows.push(result.row);
+    if (result.row) parsedRows.push(result.row);
     else skipped.push({ rowNumber, reason: result.reason });
   });
+
+  // Reject duplicate emails within the same file -- keep the first occurrence,
+  // skip every later one with a reason pointing back at the row it duplicates.
+  const rows: PeopleImportRow[] = [];
+  const firstRowByEmail = new Map<string, number>();
+  for (const row of parsedRows) {
+    const firstRow = firstRowByEmail.get(row.email);
+    if (firstRow !== undefined) {
+      skipped.push({ rowNumber: row.rowNumber, reason: `Duplicate email -- already used by row ${firstRow} in this file.` });
+      continue;
+    }
+    firstRowByEmail.set(row.email, row.rowNumber);
+    rows.push(row);
+  }
 
   if (rows.length === 0 && skipped.length === 0) {
     throw new PeopleImportError(`No people found. Use columns: ${EXPECTED_COLUMNS}.`);
@@ -159,6 +173,7 @@ function normalizeRow(row: RawRow, rowNumber: number): { row: PeopleImportRow; r
   if (!fullName && !email) return { reason: "Missing name and email." };
   if (!fullName) return { reason: "Missing name." };
   if (!email) return { reason: "Missing email." };
+  if (!isValidEmail(email)) return { reason: `Invalid email address: "${email}".` };
 
   const role: UserRole = (row.role || "").trim().toLowerCase() === "admin" ? "admin" : "player";
   const password = (row.password || "").trim();
@@ -185,6 +200,10 @@ function normalizeRow(row: RawRow, rowNumber: number): { row: PeopleImportRow; r
 
 function isTruthy(value: string) {
   return ["true", "1", "yes", "y"].includes(value.trim().toLowerCase());
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 /** Detects the "SUPABASE_SERVICE_ROLE_KEY not configured" error returned by the invite API as HTTP 501. */
