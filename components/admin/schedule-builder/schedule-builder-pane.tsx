@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createDivision, createTeam as createTeamRow, deleteDivision, deleteMatches, insertDivisionEntries, insertMatches } from "@/lib/admin-data";
+import {
+  createDivision,
+  createTeam as createTeamRow,
+  deleteDivision,
+  deleteMatches,
+  insertDivisionEntries,
+  insertMatches,
+  updateDivisionMatchSettings
+} from "@/lib/admin-data";
 import type { NewMatchRow } from "@/lib/admin-data";
 import { formatDivisionName } from "@/lib/format";
 import { generateEliminatorSchedule, generateRoundRobinSchedule } from "@/lib/league-rules";
@@ -23,6 +31,8 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
   const [generating, setGenerating] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [teamForm, setTeamForm] = useState({ name: "", playerAId: "", playerBId: "" });
+  const [bulkForm, setBulkForm] = useState({ numberOfSets: "", targetScore: "" });
+  const [applyingBulkSettings, setApplyingBulkSettings] = useState(false);
 
   useEffect(() => {
     if (tournament) builder.reset(tournament.start_date, tournament.sport);
@@ -31,6 +41,35 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
 
   const divisionMatches = admin.matches.filter((match) => match.division_id === state.divisionId);
   const canReplaceExisting = divisionMatches.length === 0 || divisionMatches.every((match) => match.status === "scheduled" || match.status === "cancelled");
+
+  useEffect(() => {
+    // Pre-fill with the division's current (possibly wrong) values, so the
+    // admin sees what's actually set today as the starting point to correct.
+    const first = divisionMatches[0];
+    setBulkForm({ numberOfSets: first ? String(first.number_of_sets) : "", targetScore: first ? String(first.target_score) : "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.divisionId]);
+
+  async function applyBulkMatchSettings() {
+    if (!admin.supabase || !state.divisionId) return;
+    const patch: Partial<{ target_score: number; number_of_sets: number }> = {};
+    if (bulkForm.numberOfSets.trim()) patch.number_of_sets = Number(bulkForm.numberOfSets);
+    if (bulkForm.targetScore.trim()) patch.target_score = Number(bulkForm.targetScore);
+    if (Object.keys(patch).length === 0) {
+      setMessage("Enter a number of sets or winning score to apply.");
+      return;
+    }
+    setApplyingBulkSettings(true);
+    try {
+      await updateDivisionMatchSettings(admin.supabase, state.divisionId, patch);
+      await admin.reloadDivisions();
+      setMessage(`Updated ${divisionMatches.length} match${divisionMatches.length === 1 ? "" : "es"} in this division.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update the matches.");
+    } finally {
+      setApplyingBulkSettings(false);
+    }
+  }
 
   const ratingOptions = useMemo(
     () => Array.from(new Set(admin.players.map((player) => player.rating).filter((rating): rating is string => Boolean(rating)))).sort(),
@@ -263,6 +302,40 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
               />
             ) : null}
           </div>
+
+          {state.divisionId && divisionMatches.length > 0 ? (
+            <div className="card stack" style={{ background: "var(--color-surface-muted)" }}>
+              <strong>Fix number of sets / winning score</strong>
+              <p className="subtle">
+                Corrects every already-generated match in this division ({divisionMatches.length} match{divisionMatches.length === 1 ? "" : "es"}) without
+                touching entries, dates, or any scores already recorded. Leave a field blank to leave it unchanged.
+              </p>
+              <div className="field-row">
+                <label className="field">
+                  <span>Number of Sets</span>
+                  <input
+                    max={3}
+                    min={1}
+                    onChange={(event) => setBulkForm((current) => ({ ...current, numberOfSets: event.target.value }))}
+                    type="number"
+                    value={bulkForm.numberOfSets}
+                  />
+                </label>
+                <label className="field">
+                  <span>Winning Score</span>
+                  <input
+                    min={1}
+                    onChange={(event) => setBulkForm((current) => ({ ...current, targetScore: event.target.value }))}
+                    type="number"
+                    value={bulkForm.targetScore}
+                  />
+                </label>
+              </div>
+              <button className="button secondary small" disabled={applyingBulkSettings} onClick={applyBulkMatchSettings} type="button">
+                {applyingBulkSettings ? "Updating..." : `Apply to all ${divisionMatches.length} match${divisionMatches.length === 1 ? "" : "es"}`}
+              </button>
+            </div>
+          ) : null}
 
           <div className="field-row">
             <label className="field">

@@ -540,6 +540,16 @@ export async function deleteMatches(supabase: SupabaseClient, matchIds: string[]
   if (error) fail(error, "Schedule was saved, but the previous matches could not be removed.");
 }
 
+/** Bulk-corrects target score / number of sets across every match already generated for a division, e.g. fixing a typo made while setting up the schedule -- without touching entries, dates, status, or any already-recorded scores. */
+export async function updateDivisionMatchSettings(
+  supabase: SupabaseClient,
+  divisionId: string,
+  patch: Partial<{ target_score: number; number_of_sets: number }>
+) {
+  const { error } = await supabase.from("matches").update(patch).eq("division_id", divisionId);
+  if (error) fail(error, "Could not update the match settings.");
+}
+
 export async function replaceMatchSets(supabase: SupabaseClient, matchId: string, sets: Array<{ setNumber: number; entryAScore: number; entryBScore: number }>) {
   const cleared = await supabase.from("match_sets").delete().eq("match_id", matchId);
   if (cleared.error) fail(cleared.error, "Could not clear the previous score.");
