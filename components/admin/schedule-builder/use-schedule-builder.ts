@@ -3,9 +3,18 @@
 import { useReducer } from "react";
 import type { DivisionFormat, ScheduleType, Sport } from "@/lib/types";
 
-/** Sensible default target score per sport -- tennis sets are won at 6 games, everything else defaults to 11 points. */
+/** Sensible default target score per sport. */
 function defaultTargetScore(sport: Sport | undefined) {
-  return sport === "tennis" ? "6" : "11";
+  switch (sport) {
+    case "tennis":
+      return "6";
+    case "badminton":
+      return "21";
+    case "volleyball":
+      return "25";
+    default:
+      return "11";
+  }
 }
 
 /**

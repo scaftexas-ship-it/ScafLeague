@@ -115,3 +115,51 @@ test("validateMatchSets accepts a tennis 7-6 tiebreak set and rejects an invalid
   );
   assert.equal(invalidEightSix.ok, false);
 });
+
+test("isValidCompletedSet handles badminton's 30-point deuce cap", () => {
+  // Normal games: reach 21 with a 2-point lead.
+  assert.equal(isValidCompletedSet(21, 0, 21, "badminton"), true);
+  assert.equal(isValidCompletedSet(21, 19, 21, "badminton"), true);
+  assert.equal(isValidCompletedSet(21, 20, 21, "badminton"), false); // must continue past 21-20
+
+  // Extended deuce play: 2-point lead reached anywhere up to the cap.
+  assert.equal(isValidCompletedSet(23, 21, 21, "badminton"), true);
+  assert.equal(isValidCompletedSet(29, 27, 21, "badminton"), true);
+
+  // Hard cap at target+9 (30): the side reaching it wins outright, even by just 1.
+  assert.equal(isValidCompletedSet(30, 29, 21, "badminton"), true);
+
+  // Never valid: points can't run past the cap.
+  assert.equal(isValidCompletedSet(31, 29, 21, "badminton"), false);
+  assert.equal(isValidCompletedSet(32, 30, 21, "badminton"), false);
+});
+
+test("isValidCompletedSet applies the plain win-by-2-no-cap rule to volleyball", () => {
+  assert.equal(isValidCompletedSet(25, 20, 25, "volleyball"), true);
+  assert.equal(isValidCompletedSet(25, 24, 25, "volleyball"), false); // must continue past 25-24
+  assert.equal(isValidCompletedSet(27, 25, 25, "volleyball"), true); // extended, no cap
+  assert.equal(isValidCompletedSet(35, 33, 25, "volleyball"), true); // still no cap, however far it runs
+});
+
+test("validateMatchSets accepts a badminton 30-29 cap set and rejects an invalid 31-29", () => {
+  const match = { entryAId: "a", entryBId: "b", numberOfSets: 3, targetScore: 21, sport: "badminton" as const };
+
+  const capWin = validateMatchSets(
+    [
+      { setNumber: 1, entryAScore: 21, entryBScore: 15 },
+      { setNumber: 2, entryAScore: 30, entryBScore: 29 }
+    ],
+    match
+  );
+  assert.equal(capWin.ok, true);
+  assert.equal(capWin.ok ? capWin.winnerEntryId : undefined, "a");
+
+  const invalidThirtyOne = validateMatchSets(
+    [
+      { setNumber: 1, entryAScore: 21, entryBScore: 15 },
+      { setNumber: 2, entryAScore: 31, entryBScore: 29 }
+    ],
+    match
+  );
+  assert.equal(invalidThirtyOne.ok, false);
+});

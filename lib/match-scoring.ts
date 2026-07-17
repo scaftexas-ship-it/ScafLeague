@@ -81,11 +81,16 @@ export function getWinnerEntryId(
 
 /**
  * A finished set requires the winner to reach the target score and lead by
- * at least 2 -- except tennis, which allows one exception: once both sides
- * reach target-1 games (e.g. 6-6), a single tiebreak game decides the set,
- * recorded as target+1 to target-1 games (e.g. 7-6), a 1-game margin. Tennis
- * sets also can't run past target+1 games (no 8-6, 9-7, etc.) since the
- * tiebreak always resolves the set.
+ * at least 2 (pickleball, volleyball -- no upper cap, deuce play continues
+ * indefinitely until a 2-point lead). Two sports have their own exception:
+ *
+ * - Tennis: once both sides reach target-1 games (e.g. 6-6), a single
+ *   tiebreak game decides the set, recorded as target+1 to target-1 games
+ *   (e.g. 7-6), a 1-game margin. Games can't run past target+1 (no 8-6)
+ *   since the tiebreak always resolves the set.
+ * - Badminton: deuce play is capped 9 points above target (BWF rule: games
+ *   to 21, but the side reaching 30 wins outright even at just a 1-point
+ *   lead, e.g. 30-29). Points can't run past target+9 (no 31-29).
  */
 export function isValidCompletedSet(entryAScore: number, entryBScore: number, targetScore: number, sport: Sport = "pickleball") {
   if (!Number.isFinite(entryAScore) || !Number.isFinite(entryBScore)) return false;
@@ -96,6 +101,13 @@ export function isValidCompletedSet(entryAScore: number, entryBScore: number, ta
     if (winner === targetScore) return loser <= targetScore - 2;
     if (winner === targetScore + 1) return loser === targetScore - 1 || loser === targetScore;
     return false;
+  }
+
+  if (sport === "badminton") {
+    const cap = targetScore + 9;
+    if (winner > cap) return false;
+    if (winner === cap) return loser === cap - 1;
+    return winner >= targetScore && winner - loser >= 2;
   }
 
   return winner >= targetScore && winner - loser >= 2;
@@ -125,7 +137,9 @@ export function validateMatchSets(
       const hint =
         match.sport === "tennis"
           ? `the winner needs ${match.targetScore} games with a 2-game lead, or ${match.targetScore + 1}-${match.targetScore - 1} / ${match.targetScore + 1}-${match.targetScore} (tiebreak)`
-          : `the winner needs at least ${match.targetScore} points and a 2-point lead`;
+          : match.sport === "badminton"
+            ? `the winner needs at least ${match.targetScore} points with a 2-point lead, capped at ${match.targetScore + 9}-${match.targetScore + 8}`
+            : `the winner needs at least ${match.targetScore} points and a 2-point lead`;
       return {
         ok: false,
         error: `Set ${set.setNumber} score (${set.entryAScore}-${set.entryBScore}) isn't a valid finished set -- ${hint}.`
