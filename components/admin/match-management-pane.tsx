@@ -34,6 +34,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const filteredMatches =
     divisionFilter === "all" ? admin.matches : admin.matches.filter((match) => match.division_id === divisionFilter);
   const sortedMatches = [...filteredMatches].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round);
+  const sport = admin.tournaments.find((tournament) => tournament.id === admin.selectedTournamentId)?.sport || "pickleball";
 
   function handleTournamentFilterChange(tournamentId: string) {
     admin.setSelectedTournamentId(tournamentId);
@@ -90,6 +91,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
                   onSave={saveMatch}
                   saving={savingMatchId === match.id}
                   sets={sets}
+                  sport={sport}
                 />
               );
             })}

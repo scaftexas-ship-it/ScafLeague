@@ -13,12 +13,14 @@ import {
   listMatches,
   listStandings,
   listTournaments,
+  reconcileExpiredMatches,
   replaceMatchSets,
   updateMatch
 } from "@/lib/admin-data";
 import type { DivisionEntryRow, DivisionRow, MatchRow, PlayerProfileRow, TeamMemberRow, TournamentRow } from "@/lib/admin-data";
 import { listAllPlayersInClub, listEntriesForPlayerIds, listEntriesForTeamIds, listPlayerProfilesForUser, listTeamIdsForPlayerIds } from "@/lib/player-data";
 import { validateMatchSets } from "@/lib/match-scoring";
+import { todayIso } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -89,7 +91,8 @@ export function PlayerWorkspace() {
       const loadedEntries = await listDivisionEntries(supabase, divisionIds);
       setEntries(loadedEntries);
 
-      const [allMatches, standingRows] = await Promise.all([listMatches(supabase, divisionIds), listStandings(supabase, divisionIds)]);
+      const [loadedMatches, standingRows] = await Promise.all([listMatches(supabase, divisionIds), listStandings(supabase, divisionIds)]);
+      const allMatches = await reconcileExpiredMatches(supabase, loadedMatches, todayIso());
       setMatches(allMatches);
       setStandings(standingRows);
 
@@ -137,7 +140,8 @@ export function PlayerWorkspace() {
       entryAId: match.entry_a_id,
       entryBId: match.entry_b_id,
       numberOfSets: match.number_of_sets,
-      targetScore: match.target_score
+      targetScore: match.target_score,
+      sport: tournamentForDivision(match.division_id)?.sport
     });
     if (!result.ok) {
       setMessage(result.error);
@@ -292,6 +296,7 @@ export function PlayerWorkspace() {
                     onClaimForfeit={claimForfeit}
                     onSubmitScore={submitScore}
                     players={allPlayers}
+                    sport={tournamentForDivision(match.division_id)?.sport || "pickleball"}
                     teamMembers={teamMembers}
                     tournamentName={tournamentForDivision(match.division_id)?.name}
                   />

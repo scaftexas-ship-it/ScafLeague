@@ -17,7 +17,7 @@ import { ManualMatchups } from "./manual-matchups";
 
 export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
   const tournament = admin.tournaments.find((item) => item.id === admin.selectedTournamentId);
-  const builder = useScheduleBuilder(tournament?.start_date || new Date().toISOString().slice(0, 10));
+  const builder = useScheduleBuilder(tournament?.start_date || new Date().toISOString().slice(0, 10), tournament?.sport);
   const { state } = builder;
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -25,7 +25,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
   const [teamForm, setTeamForm] = useState({ name: "", playerAId: "", playerBId: "" });
 
   useEffect(() => {
-    if (tournament) builder.reset(tournament.start_date);
+    if (tournament) builder.reset(tournament.start_date, tournament.sport);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournament?.id]);
 
@@ -39,7 +39,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
 
   function selectDivision(divisionId: string) {
     if (!divisionId) {
-      builder.reset(tournament?.start_date || state.startDate);
+      builder.reset(tournament?.start_date || state.startDate, tournament?.sport);
       return;
     }
     const division = admin.divisions.find((item) => item.id === divisionId);
@@ -84,7 +84,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
     if (!admin.supabase) return;
     try {
       await deleteDivision(admin.supabase, divisionId);
-      if (state.divisionId === divisionId) builder.reset(tournament?.start_date || state.startDate);
+      if (state.divisionId === divisionId) builder.reset(tournament?.start_date || state.startDate, tournament?.sport);
       await admin.reloadDivisions();
       setMessage("Division deleted.");
     } catch (error) {
@@ -227,7 +227,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
         `Schedule generated: ${newRows.length} match${newRows.length === 1 ? "" : "es"}.` +
           (wasNewDivision ? " Set up another division for this tournament, or switch tabs when you're done." : "")
       );
-      if (wasNewDivision) builder.reset(tournament.start_date);
+      if (wasNewDivision) builder.reset(tournament.start_date, tournament.sport);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not generate the schedule.");
     } finally {

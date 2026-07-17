@@ -183,3 +183,67 @@ test("scores 2-0, 2-1, forfeit, and cancelled matches", () => {
   assert.equal(byId["e-2"].cancelled, 1);
   assert.equal(byId["e-4"].cancelled, 1);
 });
+
+test("bonus points: played gets 1, winning at least one set adds 1 more, matching the admin's spec examples", () => {
+  const pair: DivisionEntry[] = [
+    { id: "a", divisionId: "d-1", label: "A", playerIds: ["p-a"] },
+    { id: "b", divisionId: "d-1", label: "B", playerIds: ["p-b"] }
+  ];
+  const base = {
+    divisionId: "d-1",
+    round: 1,
+    entryAId: "a",
+    entryBId: "b",
+    scheduleWeekStart: "2026-07-06",
+    scheduleWeekEnd: "2026-07-12",
+    extensionWeekStart: "2026-07-13",
+    extensionWeekEnd: "2026-07-19"
+  } as const;
+
+  // Example 1: A wins 11-5, 6-11, 11-7 (2-1) -- A gets 4 for the win, B gets
+  // 1 for playing plus 1 more for winning a set (set 2) = 2.
+  const threeSetWin: Match = {
+    ...base,
+    id: "m-1",
+    status: "completed",
+    sets: [
+      { setNumber: 1, entryAScore: 11, entryBScore: 5 },
+      { setNumber: 2, entryAScore: 6, entryBScore: 11 },
+      { setNumber: 3, entryAScore: 11, entryBScore: 7 }
+    ]
+  };
+  const threeSetStandings = calculateStandings(pair, [threeSetWin]);
+  const threeSetById = Object.fromEntries(threeSetStandings.map((s) => [s.entryId, s]));
+  assert.equal(threeSetById.a.points, 4);
+  assert.equal(threeSetById.b.points, 2);
+
+  // Example 2: A wins 11-5, 11-7 (straight sets) -- A gets 4, B gets just
+  // the 1 played point since B won zero sets.
+  const straightSetWin: Match = {
+    ...base,
+    id: "m-2",
+    status: "completed",
+    sets: [
+      { setNumber: 1, entryAScore: 11, entryBScore: 5 },
+      { setNumber: 2, entryAScore: 11, entryBScore: 7 }
+    ]
+  };
+  const straightSetStandings = calculateStandings(pair, [straightSetWin]);
+  const straightSetById = Object.fromEntries(straightSetStandings.map((s) => [s.entryId, s]));
+  assert.equal(straightSetById.a.points, 4);
+  assert.equal(straightSetById.b.points, 1);
+
+  // Forfeit: the forfeiting player gets 0, the winner gets 4.
+  const forfeited: Match = { ...base, id: "m-3", status: "forfeit", winnerEntryId: "a", forfeitByEntryId: "b", sets: [] };
+  const forfeitStandings = calculateStandings(pair, [forfeited]);
+  const forfeitById = Object.fromEntries(forfeitStandings.map((s) => [s.entryId, s]));
+  assert.equal(forfeitById.a.points, 4);
+  assert.equal(forfeitById.b.points, 0);
+
+  // Cancelled (deadline passed): both players get 0.
+  const cancelledMatch: Match = { ...base, id: "m-4", status: "cancelled", sets: [] };
+  const cancelledStandings = calculateStandings(pair, [cancelledMatch]);
+  const cancelledById = Object.fromEntries(cancelledStandings.map((s) => [s.entryId, s]));
+  assert.equal(cancelledById.a.points, 0);
+  assert.equal(cancelledById.b.points, 0);
+});

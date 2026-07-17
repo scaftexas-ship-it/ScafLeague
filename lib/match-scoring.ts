@@ -1,5 +1,5 @@
 import type { MatchRow } from "./admin-data";
-import type { Match, MatchSet } from "./types";
+import type { Match, MatchSet, Sport } from "./types";
 
 /** Flat form state for a 3-set score entry grid, shared by the player and admin match editors. */
 export type SetScoreForm = {
@@ -79,10 +79,26 @@ export function getWinnerEntryId(
   return wins.a > wins.b ? match.entryAId : match.entryBId;
 }
 
-/** A finished set requires the winner to reach the target score and lead by at least 2. */
-export function isValidCompletedSet(entryAScore: number, entryBScore: number, targetScore: number) {
+/**
+ * A finished set requires the winner to reach the target score and lead by
+ * at least 2 -- except tennis, which allows one exception: once both sides
+ * reach target-1 games (e.g. 6-6), a single tiebreak game decides the set,
+ * recorded as target+1 to target-1 games (e.g. 7-6), a 1-game margin. Tennis
+ * sets also can't run past target+1 games (no 8-6, 9-7, etc.) since the
+ * tiebreak always resolves the set.
+ */
+export function isValidCompletedSet(entryAScore: number, entryBScore: number, targetScore: number, sport: Sport = "pickleball") {
   if (!Number.isFinite(entryAScore) || !Number.isFinite(entryBScore)) return false;
-  return Math.max(entryAScore, entryBScore) >= targetScore && Math.abs(entryAScore - entryBScore) >= 2;
+  const winner = Math.max(entryAScore, entryBScore);
+  const loser = Math.min(entryAScore, entryBScore);
+
+  if (sport === "tennis") {
+    if (winner === targetScore) return loser <= targetScore - 2;
+    if (winner === targetScore + 1) return loser === targetScore - 1 || loser === targetScore;
+    return false;
+  }
+
+  return winner >= targetScore && winner - loser >= 2;
 }
 
 /**
@@ -93,7 +109,7 @@ export function isValidCompletedSet(entryAScore: number, entryBScore: number, ta
  */
 export function validateMatchSets(
   sets: MatchSet[],
-  match: { entryAId: string; entryBId: string; numberOfSets?: number; targetScore: number }
+  match: { entryAId: string; entryBId: string; numberOfSets?: number; targetScore: number; sport?: Sport }
 ): { ok: true; winnerEntryId: string } | { ok: false; error: string } {
   const majorityNeeded = Math.ceil((match.numberOfSets || 3) / 2);
   const sorted = [...sets].sort((a, b) => a.setNumber - b.setNumber);
@@ -105,10 +121,14 @@ export function validateMatchSets(
     if (Math.max(winsA, winsB) >= majorityNeeded) {
       return { ok: false, error: `Set ${set.setNumber} was entered, but the match was already decided after set ${set.setNumber - 1}. Remove the extra set.` };
     }
-    if (!isValidCompletedSet(set.entryAScore, set.entryBScore, match.targetScore)) {
+    if (!isValidCompletedSet(set.entryAScore, set.entryBScore, match.targetScore, match.sport)) {
+      const hint =
+        match.sport === "tennis"
+          ? `the winner needs ${match.targetScore} games with a 2-game lead, or ${match.targetScore + 1}-${match.targetScore - 1} / ${match.targetScore + 1}-${match.targetScore} (tiebreak)`
+          : `the winner needs at least ${match.targetScore} points and a 2-point lead`;
       return {
         ok: false,
-        error: `Set ${set.setNumber} score (${set.entryAScore}-${set.entryBScore}) isn't a valid finished set -- the winner needs at least ${match.targetScore} points and a 2-point lead.`
+        error: `Set ${set.setNumber} score (${set.entryAScore}-${set.entryBScore}) isn't a valid finished set -- ${hint}.`
       };
     }
     if (set.entryAScore > set.entryBScore) winsA += 1;

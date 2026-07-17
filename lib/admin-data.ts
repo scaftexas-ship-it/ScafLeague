@@ -457,6 +457,28 @@ export async function listMatches(supabase: SupabaseClient, divisionIds: string[
   return (data || []) as unknown as MatchRow[];
 }
 
+/**
+ * Auto-cancels matches that were never played once their extension week has
+ * ended, using each match's own admin-configured schedule dates. This app
+ * has no server-side cron, so this runs opportunistically whenever matches
+ * are loaded (admin workspace, player schedule) instead. A bulk update with
+ * RLS is safe to call from either context: rows the caller isn't allowed to
+ * touch are silently excluded rather than erroring, so a player triggers it
+ * only for their own matches while an admin covers everything loaded.
+ */
+export async function reconcileExpiredMatches(supabase: SupabaseClient, matches: MatchRow[], today: string) {
+  const expiredIds = matches
+    .filter((match) => (match.status === "scheduled" || match.status === "score_submitted") && match.extension_week_end < today)
+    .map((match) => match.id);
+  if (expiredIds.length === 0) return matches;
+
+  const { data, error } = await supabase.from("matches").update({ status: "cancelled" }).in("id", expiredIds).select(matchSelect);
+  if (error || !data) return matches;
+
+  const updatedById = new Map((data as unknown as MatchRow[]).map((match) => [match.id, match]));
+  return matches.map((match) => updatedById.get(match.id) || match);
+}
+
 export async function listMatchSets(supabase: SupabaseClient, matchIds: string[]) {
   if (matchIds.length === 0) return [] as MatchSetRow[];
   const { data, error } = await supabase.from("match_sets").select(matchSetSelect).in("match_id", matchIds).order("set_number", { ascending: true });

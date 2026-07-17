@@ -7,7 +7,7 @@ import { buildSetsFromForm, canSubmitScoreInWindow, setScoreFormFromSets, valida
 import type { SetScoreForm } from "@/lib/match-scoring";
 import { formatStatusLabel, todayIso } from "@/lib/format";
 import type { DivisionEntryRow, MatchRow, MatchSetRow } from "@/lib/admin-data";
-import type { MatchStatus } from "@/lib/types";
+import type { MatchStatus, Sport } from "@/lib/types";
 import { ScoreGrid } from "@/components/ui/score-grid";
 
 const STATUS_OPTIONS: MatchStatus[] = ["scheduled", "score_submitted", "completed", "forfeit", "cancelled"];
@@ -31,7 +31,8 @@ export function MatchEditor({
   match,
   sets,
   onSave,
-  saving
+  saving,
+  sport
 }: {
   divisionName: string;
   entryA?: DivisionEntryRow;
@@ -40,6 +41,7 @@ export function MatchEditor({
   sets: MatchSetRow[];
   onSave: (match: MatchRow, sets: ReturnType<typeof buildSetsFromForm>, patch: MatchEditPatch) => Promise<void>;
   saving: boolean;
+  sport: Sport;
 }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<MatchStatus>(match.status);
@@ -84,7 +86,8 @@ export function MatchEditor({
         entryAId: match.entry_a_id,
         entryBId: match.entry_b_id,
         numberOfSets: match.number_of_sets,
-        targetScore: Number(targetScore) || match.target_score
+        targetScore: Number(targetScore) || match.target_score,
+        sport
       });
       if (!result.ok) {
         setLocalMessage(result.error);
@@ -180,6 +183,7 @@ export function MatchEditor({
                 numberOfSets={match.number_of_sets}
                 scoreForm={scoreForm}
                 setScoreForm={setScoreForm}
+                sport={sport}
                 targetScore={Number(targetScore) || match.target_score}
               />
             )

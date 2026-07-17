@@ -70,3 +70,48 @@ test("validateMatchSets accepts a clean 2-0 result", () => {
   assert.equal(result.ok, true);
   assert.equal(result.ok ? result.winnerEntryId : undefined, "a");
 });
+
+test("isValidCompletedSet handles tennis's tiebreak exception at target+1 games", () => {
+  // Normal games: reach 6 with a 2-game lead.
+  assert.equal(isValidCompletedSet(6, 0, 6, "tennis"), true);
+  assert.equal(isValidCompletedSet(6, 4, 6, "tennis"), true);
+  assert.equal(isValidCompletedSet(6, 5, 6, "tennis"), false); // must continue past 6-5
+
+  // Extended set: 7-5 (2-game lead reached at 7).
+  assert.equal(isValidCompletedSet(7, 5, 6, "tennis"), true);
+
+  // Tiebreak set: 7-6 (1-game lead only valid at the tiebreak score).
+  assert.equal(isValidCompletedSet(7, 6, 6, "tennis"), true);
+  assert.equal(isValidCompletedSet(6, 7, 6, "tennis"), true);
+
+  // Never valid: games can't run past target+1 (tiebreak always resolves the set).
+  assert.equal(isValidCompletedSet(8, 6, 6, "tennis"), false);
+  assert.equal(isValidCompletedSet(9, 7, 6, "tennis"), false);
+
+  // Pickleball's plain win-by-2 rule must still apply when sport is omitted/non-tennis.
+  assert.equal(isValidCompletedSet(11, 9, 11), true);
+  assert.equal(isValidCompletedSet(11, 9, 11, "pickleball"), true);
+});
+
+test("validateMatchSets accepts a tennis 7-6 tiebreak set and rejects an invalid 8-6", () => {
+  const match = { entryAId: "a", entryBId: "b", numberOfSets: 3, targetScore: 6, sport: "tennis" as const };
+
+  const tiebreakWin = validateMatchSets(
+    [
+      { setNumber: 1, entryAScore: 6, entryBScore: 3 },
+      { setNumber: 2, entryAScore: 7, entryBScore: 6 }
+    ],
+    match
+  );
+  assert.equal(tiebreakWin.ok, true);
+  assert.equal(tiebreakWin.ok ? tiebreakWin.winnerEntryId : undefined, "a");
+
+  const invalidEightSix = validateMatchSets(
+    [
+      { setNumber: 1, entryAScore: 6, entryBScore: 3 },
+      { setNumber: 2, entryAScore: 8, entryBScore: 6 }
+    ],
+    match
+  );
+  assert.equal(invalidEightSix.ok, false);
+});

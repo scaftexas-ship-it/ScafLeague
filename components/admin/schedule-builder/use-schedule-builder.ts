@@ -1,7 +1,12 @@
 "use client";
 
 import { useReducer } from "react";
-import type { DivisionFormat, ScheduleType } from "@/lib/types";
+import type { DivisionFormat, ScheduleType, Sport } from "@/lib/types";
+
+/** Sensible default target score per sport -- tennis sets are won at 6 games, everything else defaults to 11 points. */
+function defaultTargetScore(sport: Sport | undefined) {
+  return sport === "tennis" ? "6" : "11";
+}
 
 /**
  * The old admin-workspace.tsx tracked this wizard as ~24 separate useState
@@ -40,7 +45,7 @@ export type ScheduleBuilderState = {
   replaceExisting: boolean;
 };
 
-function initialState(startDate: string): ScheduleBuilderState {
+function initialState(startDate: string, sport?: Sport): ScheduleBuilderState {
   return {
     step: "setup",
     divisionId: "",
@@ -57,7 +62,7 @@ function initialState(startDate: string): ScheduleBuilderState {
     forfeitBeforeDays: "7",
     forfeitAfterDays: "0",
     changeWinningScore: false,
-    targetScore: "11",
+    targetScore: defaultTargetScore(sport),
     selectedPlayerIds: [],
     selectedTeamIds: [],
     manualMatches: [{ aId: "", bId: "" }],
@@ -72,7 +77,7 @@ function initialState(startDate: string): ScheduleBuilderState {
 
 type Action =
   | { type: "patch"; patch: Partial<ScheduleBuilderState> }
-  | { type: "reset"; startDate: string }
+  | { type: "reset"; startDate: string; sport?: Sport }
   | { type: "toggle-player"; id: string }
   | { type: "toggle-team"; id: string }
   | { type: "clear-visible-players"; visibleIds: string[] }
@@ -88,7 +93,7 @@ function reducer(state: ScheduleBuilderState, action: Action): ScheduleBuilderSt
     case "patch":
       return { ...state, ...action.patch };
     case "reset":
-      return initialState(action.startDate);
+      return initialState(action.startDate, action.sport);
     case "toggle-player": {
       const selected = state.selectedPlayerIds.includes(action.id)
         ? state.selectedPlayerIds.filter((id) => id !== action.id)
@@ -123,13 +128,13 @@ function reducer(state: ScheduleBuilderState, action: Action): ScheduleBuilderSt
   }
 }
 
-export function useScheduleBuilder(startDate: string) {
-  const [state, dispatch] = useReducer(reducer, startDate, initialState);
+export function useScheduleBuilder(startDate: string, sport?: Sport) {
+  const [state, dispatch] = useReducer(reducer, undefined, () => initialState(startDate, sport));
 
   return {
     state,
     patch: (patch: Partial<ScheduleBuilderState>) => dispatch({ type: "patch", patch }),
-    reset: (nextStartDate: string) => dispatch({ type: "reset", startDate: nextStartDate }),
+    reset: (nextStartDate: string, sport?: Sport) => dispatch({ type: "reset", startDate: nextStartDate, sport }),
     togglePlayer: (id: string) => dispatch({ type: "toggle-player", id }),
     toggleTeam: (id: string) => dispatch({ type: "toggle-team", id }),
     selectVisiblePlayers: (visibleIds: string[]) => dispatch({ type: "select-visible-players", visibleIds }),

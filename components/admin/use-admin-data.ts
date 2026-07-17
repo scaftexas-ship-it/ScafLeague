@@ -14,8 +14,10 @@ import {
   listPlayers,
   listTeamMembers,
   listTeams,
-  listTournaments
+  listTournaments,
+  reconcileExpiredMatches
 } from "@/lib/admin-data";
+import { todayIso } from "@/lib/format";
 import type {
   AppUserRow,
   ClubRow,
@@ -134,7 +136,8 @@ export function useAdminData() {
       const divisionIds = divisionRows.map((division) => division.id);
       const entries = await listDivisionEntries(supabase, divisionIds);
       setDivisionEntries(entries);
-      const matchRows = await listMatches(supabase, divisionIds);
+      const loadedMatches = await listMatches(supabase, divisionIds);
+      const matchRows = await reconcileExpiredMatches(supabase, loadedMatches, todayIso());
       setMatches(matchRows);
       const matchIds = matchRows.map((match) => match.id);
       setMatchSets(await listMatchSets(supabase, matchIds));

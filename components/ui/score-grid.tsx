@@ -2,6 +2,7 @@
 
 import { isValidCompletedSet } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
+import type { Sport } from "@/lib/types";
 
 const ALL_COLUMNS: Array<{ set: string; a: keyof SetScoreForm; b: keyof SetScoreForm }> = [
   { set: "1", a: "set1A", b: "set1B" },
@@ -10,7 +11,7 @@ const ALL_COLUMNS: Array<{ set: string; a: keyof SetScoreForm; b: keyof SetScore
 ];
 
 /** How many set columns to actually show: capped by numberOfSets, and cut short as soon as an earlier majority already decides the match. */
-function visibleColumnCount(scoreForm: SetScoreForm, numberOfSets: number, targetScore: number) {
+function visibleColumnCount(scoreForm: SetScoreForm, numberOfSets: number, targetScore: number, sport: Sport) {
   const configured = Math.min(Math.max(numberOfSets, 1), ALL_COLUMNS.length);
   const majorityNeeded = Math.ceil(configured / 2);
   let winsA = 0;
@@ -24,7 +25,7 @@ function visibleColumnCount(scoreForm: SetScoreForm, numberOfSets: number, targe
 
     const a = Number(aRaw);
     const b = Number(bRaw);
-    if (!isValidCompletedSet(a, b, targetScore)) return configured;
+    if (!isValidCompletedSet(a, b, targetScore, sport)) return configured;
 
     if (a > b) winsA += 1;
     else winsB += 1;
@@ -42,6 +43,7 @@ export function ScoreGrid({
   numberOfSets,
   scoreForm,
   setScoreForm,
+  sport,
   targetScore
 }: {
   aLabel: string;
@@ -49,9 +51,10 @@ export function ScoreGrid({
   numberOfSets: number;
   scoreForm: SetScoreForm;
   setScoreForm: React.Dispatch<React.SetStateAction<SetScoreForm>>;
+  sport: Sport;
   targetScore: number;
 }) {
-  const columns = ALL_COLUMNS.slice(0, visibleColumnCount(scoreForm, numberOfSets, targetScore));
+  const columns = ALL_COLUMNS.slice(0, visibleColumnCount(scoreForm, numberOfSets, targetScore, sport));
   const majorityNeeded = Math.ceil(columns.length / 2);
 
   return (

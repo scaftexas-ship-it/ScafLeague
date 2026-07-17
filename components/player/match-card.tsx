@@ -7,7 +7,7 @@ import { buildSetsFromForm, canSubmitScoreInWindow, emptySetScoreForm, getForfei
 import type { SetScoreForm } from "@/lib/match-scoring";
 import { formatShortDate, formatStatusLabel, formatWeekday, todayIso } from "@/lib/format";
 import type { DivisionEntryRow, DivisionRow, MatchRow, PlayerProfileRow, TeamMemberRow } from "@/lib/admin-data";
-import type { MatchSet } from "@/lib/types";
+import type { MatchSet, Sport } from "@/lib/types";
 import { ScoreGrid } from "@/components/ui/score-grid";
 import { ContactLinks } from "./contact-links";
 
@@ -32,6 +32,7 @@ export function MatchCard({
   onClaimForfeit,
   onSubmitScore,
   players,
+  sport,
   teamMembers,
   tournamentName
 }: {
@@ -44,6 +45,7 @@ export function MatchCard({
   onClaimForfeit: (match: MatchRow, claimedByEntryId: string) => Promise<void>;
   onSubmitScore: (match: MatchRow, sets: MatchSet[]) => Promise<void>;
   players: PlayerProfileRow[];
+  sport: Sport;
   teamMembers: TeamMemberRow[];
   tournamentName?: string;
 }) {
@@ -158,6 +160,7 @@ export function MatchCard({
                 numberOfSets={match.number_of_sets}
                 scoreForm={scoreForm}
                 setScoreForm={setScoreForm}
+                sport={sport}
                 targetScore={match.target_score}
               />
             ) : null}
