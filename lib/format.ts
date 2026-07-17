@@ -41,3 +41,16 @@ export function normalizePhone(value: string | null | undefined) {
 export function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
+
+/** Joins first/last name into the single display_name string every player is stored and shown as. */
+export function combineName(firstName: string, lastName: string) {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+}
+
+/** Best-effort split of a stored display_name back into first/last name inputs for editing -- splits on the first space, so a name with no space becomes first-name-only. */
+export function splitName(displayName: string) {
+  const trimmed = displayName.trim();
+  const spaceIndex = trimmed.indexOf(" ");
+  if (spaceIndex === -1) return { firstName: trimmed, lastName: "" };
+  return { firstName: trimmed.slice(0, spaceIndex), lastName: trimmed.slice(spaceIndex + 1) };
+}

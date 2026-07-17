@@ -322,6 +322,27 @@ export async function addPlayer(
   return data as PlayerProfileRow;
 }
 
+export async function updatePlayer(
+  supabase: SupabaseClient,
+  playerId: string,
+  patch: { displayName: string; email?: string; mobileNumber: string; rating: string; duprRating?: string }
+) {
+  const { data, error } = await supabase
+    .from("player_profiles")
+    .update({
+      display_name: patch.displayName,
+      email: patch.email?.trim() || null,
+      mobile_number: patch.mobileNumber.trim() || null,
+      rating: patch.rating.trim() || null,
+      dupr_rating: patch.duprRating?.trim() || null
+    })
+    .eq("id", playerId)
+    .select("id, club_id, user_id, display_name, email, mobile_number, rating, dupr_rating")
+    .single();
+  if (error) fail(error, "Could not update the player.");
+  return data as PlayerProfileRow;
+}
+
 /** True if the player currently holds a singles division entry or a doubles team seat anywhere in the club (not just the currently-loaded tournament), since deleting them would cascade-delete those entries and their matches. */
 export async function isPlayerInUse(supabase: SupabaseClient, playerId: string) {
   const [entries, members] = await Promise.all([

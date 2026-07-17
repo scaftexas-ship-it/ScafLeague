@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { combineName } from "./format.ts";
 import type { UserRole } from "./types";
 
 export type PeopleImportRow = {
@@ -18,9 +19,15 @@ export type SkippedImportRow = {
   reason: string;
 };
 
-const EXPECTED_COLUMNS = "full_name, email, mobile_number, role, password, rating, dupr, create_player_profile";
+const EXPECTED_COLUMNS = "first_name, last_name, email, mobile_number, role, password, rating, dupr, create_player_profile";
 
 const HEADER_ALIASES: Record<string, keyof RawRow> = {
+  first_name: "firstName",
+  firstname: "firstName",
+  first: "firstName",
+  last_name: "lastName",
+  lastname: "lastName",
+  last: "lastName",
   full_name: "fullName",
   fullname: "fullName",
   name: "fullName",
@@ -39,6 +46,8 @@ const HEADER_ALIASES: Record<string, keyof RawRow> = {
 };
 
 type RawRow = {
+  firstName?: string;
+  lastName?: string;
   fullName?: string;
   email?: string;
   mobileNumber?: string;
@@ -141,10 +150,14 @@ function mapHeaders(record: Record<string, unknown>): RawRow {
 }
 
 function normalizeRow(row: RawRow, rowNumber: number): { row: PeopleImportRow; reason?: undefined } | { row?: undefined; reason: string } {
-  const fullName = (row.fullName || "").trim();
+  const firstName = (row.firstName || "").trim();
+  const lastName = (row.lastName || "").trim();
+  // first_name/last_name take priority when present; full_name is a fallback
+  // for files that only have that single column.
+  const fullName = firstName || lastName ? combineName(firstName, lastName) : (row.fullName || "").trim();
   const email = (row.email || "").trim().toLowerCase();
-  if (!fullName && !email) return { reason: "Missing full name and email." };
-  if (!fullName) return { reason: "Missing full name." };
+  if (!fullName && !email) return { reason: "Missing name and email." };
+  if (!fullName) return { reason: "Missing name." };
   if (!email) return { reason: "Missing email." };
 
   const role: UserRole = (row.role || "").trim().toLowerCase() === "admin" ? "admin" : "player";

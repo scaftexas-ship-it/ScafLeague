@@ -1,9 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Ban, CheckCircle2, Users } from "lucide-react";
-import { addPlayer, deletePlayer, isPlayerInUse, linkUserToPlayer, toggleUserAccess, updateUserRole } from "@/lib/admin-data";
+import { Ban, CheckCircle2, Pencil, Users } from "lucide-react";
+import { addPlayer, deletePlayer, isPlayerInUse, linkUserToPlayer, toggleUserAccess, updatePlayer, updateUserRole } from "@/lib/admin-data";
+import type { PlayerProfileRow } from "@/lib/admin-data";
 import { isServiceRoleMissingError, parsePeopleImportFile, PeopleImportError } from "@/lib/people-import";
+import { combineName, splitName } from "@/lib/format";
 import type { UserRole } from "@/lib/types";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -12,17 +14,22 @@ import type { AdminData } from "./use-admin-data";
 
 type PlayerProfileMode = "__new" | "" | string;
 
+const EMPTY_INVITE_FORM = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  mobileNumber: "",
+  password: "",
+  role: "player" as UserRole,
+  rating: "",
+  duprRating: "",
+  playerProfileMode: "__new" as PlayerProfileMode
+};
+
+const EMPTY_EDIT_FORM = { firstName: "", lastName: "", email: "", mobileNumber: "", rating: "", duprRating: "" };
+
 export function PeoplePane({ admin }: { admin: AdminData }) {
-  const [inviteForm, setInviteForm] = useState({
-    fullName: "",
-    email: "",
-    mobileNumber: "",
-    password: "",
-    role: "player" as UserRole,
-    rating: "",
-    duprRating: "",
-    playerProfileMode: "__new" as PlayerProfileMode
-  });
+  const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
   const [inviting, setInviting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState("");
 
@@ -39,11 +46,15 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
   const [accessMessage, setAccessMessage] = useState("");
 
   const [playersMessage, setPlayersMessage] = useState("");
+  const [editingPlayerId, setEditingPlayerId] = useState("");
+  const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
+  const [editMessage, setEditMessage] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function inviteUser() {
     if (!admin.supabase || !admin.adminUser) return;
-    if (!inviteForm.fullName.trim() || !inviteForm.email.trim()) {
-      setInviteMessage("Enter the person's name and email.");
+    if (!inviteForm.firstName.trim() || !inviteForm.email.trim()) {
+      setInviteMessage("Enter the person's first name and email.");
       return;
     }
     if (inviteForm.password && inviteForm.password.length < 6) {
@@ -51,6 +62,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       return;
     }
 
+    const fullName = combineName(inviteForm.firstName, inviteForm.lastName);
     const createPlayerProfile = inviteForm.role === "player" && inviteForm.playerProfileMode === "__new";
 
     setInviting(true);
@@ -65,14 +77,14 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
         }
         await addPlayer(admin.supabase, {
           clubId: admin.adminUser.club_id,
-          displayName: inviteForm.fullName,
+          displayName: fullName,
           email: inviteForm.email,
           mobileNumber: inviteForm.mobileNumber,
           rating: inviteForm.rating,
           duprRating: inviteForm.duprRating
         });
         await admin.reloadPlayers();
-        setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", duprRating: "", playerProfileMode: "__new" });
+        setInviteForm(EMPTY_INVITE_FORM);
         setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
         return;
       }
@@ -89,7 +101,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           email: inviteForm.email,
-          fullName: inviteForm.fullName,
+          fullName,
           password: inviteForm.password || undefined,
           role: inviteForm.role,
           mobileNumber: inviteForm.mobileNumber,
@@ -105,14 +117,14 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
         if (response.status === 501 && isServiceRoleMissingError(result.error) && createPlayerProfile) {
           await addPlayer(admin.supabase, {
             clubId: admin.adminUser.club_id,
-            displayName: inviteForm.fullName,
+            displayName: fullName,
             email: inviteForm.email,
             mobileNumber: inviteForm.mobileNumber,
             rating: inviteForm.rating,
             duprRating: inviteForm.duprRating
           });
           await admin.reloadPlayers();
-          setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", duprRating: "", playerProfileMode: "__new" });
+          setInviteForm(EMPTY_INVITE_FORM);
           setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
           return;
         }
@@ -121,7 +133,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       }
 
       await Promise.all([admin.reloadAppUsers(), admin.reloadPlayers()]);
-      setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", duprRating: "", playerProfileMode: "__new" });
+      setInviteForm(EMPTY_INVITE_FORM);
       setInviteMessage(inviteForm.password ? "Login created." : "Invite sent.");
     } catch (error) {
       setInviteMessage(error instanceof Error ? error.message : "Could not invite the user.");
@@ -313,6 +325,45 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
     }
   }
 
+  function startEditPlayer(player: PlayerProfileRow) {
+    const { firstName, lastName } = splitName(player.display_name);
+    setEditForm({ firstName, lastName, email: player.email || "", mobileNumber: player.mobile_number || "", rating: player.rating || "", duprRating: player.dupr_rating || "" });
+    setEditingPlayerId(player.id);
+    setEditMessage("");
+  }
+
+  function cancelEditPlayer() {
+    setEditingPlayerId("");
+    setEditForm(EMPTY_EDIT_FORM);
+    setEditMessage("");
+  }
+
+  async function saveEditPlayer() {
+    if (!admin.supabase) return;
+    if (!editForm.firstName.trim()) {
+      setEditMessage("Enter a first name.");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await updatePlayer(admin.supabase, editingPlayerId, {
+        displayName: combineName(editForm.firstName, editForm.lastName),
+        email: editForm.email,
+        mobileNumber: editForm.mobileNumber,
+        rating: editForm.rating,
+        duprRating: editForm.duprRating
+      });
+      await admin.reloadPlayers();
+      setEditingPlayerId("");
+      setEditForm(EMPTY_EDIT_FORM);
+      setPlayersMessage("Player updated.");
+    } catch (error) {
+      setEditMessage(error instanceof Error ? error.message : "Could not update the player.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   const playerLoginUsers = admin.appUsers.filter((user) => user.role === "player");
 
   return (
@@ -323,10 +374,16 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             <h2>Add User And Player</h2>
           </div>
           <div className="form-grid">
-            <label className="field">
-              <span>Full name</span>
-              <input onChange={(event) => setInviteForm((current) => ({ ...current, fullName: event.target.value }))} value={inviteForm.fullName} />
-            </label>
+            <div className="field-row">
+              <label className="field">
+                <span>First name</span>
+                <input onChange={(event) => setInviteForm((current) => ({ ...current, firstName: event.target.value }))} value={inviteForm.firstName} />
+              </label>
+              <label className="field">
+                <span>Last name</span>
+                <input onChange={(event) => setInviteForm((current) => ({ ...current, lastName: event.target.value }))} value={inviteForm.lastName} />
+              </label>
+            </div>
             <label className="field">
               <span>Email</span>
               <input inputMode="email" onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))} value={inviteForm.email} />
@@ -423,9 +480,9 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             />
           </label>
           <p className="subtle">
-            Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, mobile_number, role, password, rating, dupr, create_player_profile. DUPR is
-            optional and only meaningful for pickleball players. Without SUPABASE_SERVICE_ROLE_KEY, player profiles import but login accounts are
-            skipped.
+            Upload CSV, TSV, XLS, or XLSX with columns: first_name, last_name, email, mobile_number, role, password, rating, dupr,
+            create_player_profile (a single full_name column also still works). DUPR is optional and only meaningful for pickleball players. Without
+            SUPABASE_SERVICE_ROLE_KEY, player profiles import but login accounts are skipped.
           </p>
           <StatusBanner message={importMessage} />
           {importFailures.length > 0 ? (
@@ -570,6 +627,64 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
               <tbody>
                 {admin.players.map((player) => {
                   const linkedUser = admin.appUsers.find((user) => user.id === player.user_id);
+                  if (editingPlayerId === player.id) {
+                    return (
+                      <tr key={player.id}>
+                        <td>
+                          <div className="field-row">
+                            <input
+                              onChange={(event) => setEditForm((current) => ({ ...current, firstName: event.target.value }))}
+                              placeholder="First name"
+                              value={editForm.firstName}
+                            />
+                            <input
+                              onChange={(event) => setEditForm((current) => ({ ...current, lastName: event.target.value }))}
+                              placeholder="Last name"
+                              value={editForm.lastName}
+                            />
+                          </div>
+                        </td>
+                        <td>
+                          <input
+                            inputMode="email"
+                            onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))}
+                            value={editForm.email}
+                          />
+                        </td>
+                        <td>
+                          <input onChange={(event) => setEditForm((current) => ({ ...current, rating: event.target.value }))} value={editForm.rating} />
+                        </td>
+                        <td>
+                          <input
+                            onChange={(event) => setEditForm((current) => ({ ...current, duprRating: event.target.value }))}
+                            value={editForm.duprRating}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            inputMode="tel"
+                            onChange={(event) => setEditForm((current) => ({ ...current, mobileNumber: event.target.value }))}
+                            value={editForm.mobileNumber}
+                          />
+                        </td>
+                        <td colSpan={2}>
+                          <div className="toolbar">
+                            <button className="button small" disabled={savingEdit} onClick={saveEditPlayer} type="button">
+                              {savingEdit ? "Saving..." : "Save"}
+                            </button>
+                            <button className="button secondary small" disabled={savingEdit} onClick={cancelEditPlayer} type="button">
+                              Cancel
+                            </button>
+                          </div>
+                          {editMessage ? (
+                            <p className="status-banner" data-tone="error">
+                              {editMessage}
+                            </p>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  }
                   return (
                     <tr key={player.id}>
                       <td>{player.display_name}</td>
@@ -587,7 +702,13 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                         )}
                       </td>
                       <td>
-                        <ConfirmButton key={player.id} onConfirm={() => removePlayer(player.id)} />
+                        <div className="toolbar">
+                          <button className="button secondary small" onClick={() => startEditPlayer(player)} type="button">
+                            <Pencil size={14} aria-hidden />
+                            Edit
+                          </button>
+                          <ConfirmButton key={player.id} onConfirm={() => removePlayer(player.id)} />
+                        </div>
                       </td>
                     </tr>
                   );
