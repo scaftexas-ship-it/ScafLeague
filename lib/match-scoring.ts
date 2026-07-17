@@ -79,6 +79,49 @@ export function getWinnerEntryId(
   return wins.a > wins.b ? match.entryAId : match.entryBId;
 }
 
+/** A finished set requires the winner to reach the target score and lead by at least 2. */
+export function isValidCompletedSet(entryAScore: number, entryBScore: number, targetScore: number) {
+  if (!Number.isFinite(entryAScore) || !Number.isFinite(entryBScore)) return false;
+  return Math.max(entryAScore, entryBScore) >= targetScore && Math.abs(entryAScore - entryBScore) >= 2;
+}
+
+/**
+ * Stricter alternative to getWinnerEntryId for score-entry submission: every
+ * entered set must be a valid completed set (see isValidCompletedSet), and no
+ * set may be entered after the match was already decided by an earlier
+ * majority (e.g. a 3rd set in a best-of-3 after a 2-0 result).
+ */
+export function validateMatchSets(
+  sets: MatchSet[],
+  match: { entryAId: string; entryBId: string; numberOfSets?: number; targetScore: number }
+): { ok: true; winnerEntryId: string } | { ok: false; error: string } {
+  const majorityNeeded = Math.ceil((match.numberOfSets || 3) / 2);
+  const sorted = [...sets].sort((a, b) => a.setNumber - b.setNumber);
+
+  let winsA = 0;
+  let winsB = 0;
+
+  for (const set of sorted) {
+    if (Math.max(winsA, winsB) >= majorityNeeded) {
+      return { ok: false, error: `Set ${set.setNumber} was entered, but the match was already decided after set ${set.setNumber - 1}. Remove the extra set.` };
+    }
+    if (!isValidCompletedSet(set.entryAScore, set.entryBScore, match.targetScore)) {
+      return {
+        ok: false,
+        error: `Set ${set.setNumber} score (${set.entryAScore}-${set.entryBScore}) isn't a valid finished set -- the winner needs at least ${match.targetScore} points and a 2-point lead.`
+      };
+    }
+    if (set.entryAScore > set.entryBScore) winsA += 1;
+    else winsB += 1;
+  }
+
+  if (winsA === winsB || Math.max(winsA, winsB) < majorityNeeded) {
+    return { ok: false, error: "Enter a valid score with a clear winner." };
+  }
+
+  return { ok: true, winnerEntryId: winsA > winsB ? match.entryAId : match.entryBId };
+}
+
 /** Converts a Supabase matches row into the plain lib/league-rules.ts domain shape. */
 export function toDomainMatch(match: MatchRow, sets: MatchSet[] = []): Match {
   return {

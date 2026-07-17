@@ -14,6 +14,7 @@ import { RosterPane } from "./roster-pane";
 export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const [savingMatchId, setSavingMatchId] = useState("");
   const [message, setMessage] = useState("");
+  const [divisionFilter, setDivisionFilter] = useState("all");
 
   async function saveMatch(match: MatchRow, sets: Array<{ setNumber: number; entryAScore: number; entryBScore: number }>, patch: MatchEditPatch) {
     if (!admin.supabase) return;
@@ -30,7 +31,14 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
     }
   }
 
-  const sortedMatches = [...admin.matches].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round);
+  const filteredMatches =
+    divisionFilter === "all" ? admin.matches : admin.matches.filter((match) => match.division_id === divisionFilter);
+  const sortedMatches = [...filteredMatches].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round);
+
+  function handleTournamentFilterChange(tournamentId: string) {
+    admin.setSelectedTournamentId(tournamentId);
+    setDivisionFilter("all");
+  }
 
   return (
     <div className="stack">
@@ -39,6 +47,31 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
         <div className="section-title">
           <h2>Match Management</h2>
         </div>
+        {admin.tournaments.length > 0 ? (
+          <div className="field-row">
+            <label className="field">
+              <span>Tournament</span>
+              <select onChange={(event) => handleTournamentFilterChange(event.target.value)} value={admin.selectedTournamentId}>
+                {admin.tournaments.map((tournament) => (
+                  <option key={tournament.id} value={tournament.id}>
+                    {tournament.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Division</span>
+              <select onChange={(event) => setDivisionFilter(event.target.value)} value={divisionFilter}>
+                <option value="all">All divisions</option>
+                {admin.divisions.map((division) => (
+                  <option key={division.id} value={division.id}>
+                    {division.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
         <StatusBanner message={message} />
         {sortedMatches.length > 0 ? (
           <div className="match-list">
@@ -61,6 +94,8 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
               );
             })}
           </div>
+        ) : admin.matches.length > 0 ? (
+          <EmptyState icon={<ClipboardX size={24} aria-hidden />} title="No matches in this division" body="Choose a different division filter." />
         ) : (
           <EmptyState icon={<ClipboardX size={24} aria-hidden />} title="No matches yet" body="Generate a schedule from the Tournaments tab first." />
         )}

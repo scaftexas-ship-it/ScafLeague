@@ -9,6 +9,7 @@ type InvitePayload = {
   playerProfileId?: string;
   createPlayerProfile?: boolean;
   rating?: string;
+  duprRating?: string;
   mobileNumber?: string;
 };
 
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
   const role = body.role === "admin" ? "admin" : "player";
   const playerProfileId = body.playerProfileId?.trim() || null;
   const rating = body.rating?.trim() || null;
+  const duprRating = body.duprRating?.trim() || null;
   const mobileNumber = body.mobileNumber?.trim() || null;
 
   if (!email || !fullName) {
@@ -112,7 +114,7 @@ export async function POST(request: NextRequest) {
   if (playerProfileId) {
     const { error: profileError } = await serviceClient
       .from("player_profiles")
-      .update({ user_id: authResult.data.user.id, email, mobile_number: mobileNumber })
+      .update({ user_id: authResult.data.user.id, email, mobile_number: mobileNumber, rating, dupr_rating: duprRating })
       .eq("id", playerProfileId)
       .eq("club_id", adminUser.club_id);
 
@@ -126,7 +128,8 @@ export async function POST(request: NextRequest) {
       display_name: fullName,
       email,
       mobile_number: mobileNumber,
-      rating
+      rating,
+      dupr_rating: duprRating
     });
 
     if (createProfileError) {

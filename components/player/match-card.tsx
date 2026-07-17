@@ -8,6 +8,7 @@ import type { SetScoreForm } from "@/lib/match-scoring";
 import { formatShortDate, formatStatusLabel, formatWeekday, todayIso } from "@/lib/format";
 import type { DivisionEntryRow, DivisionRow, MatchRow, PlayerProfileRow, TeamMemberRow } from "@/lib/admin-data";
 import type { MatchSet } from "@/lib/types";
+import { ScoreGrid } from "@/components/ui/score-grid";
 import { ContactLinks } from "./contact-links";
 
 function getEntryPlayers(entry: DivisionEntryRow | undefined, players: PlayerProfileRow[], teamMembers: TeamMemberRow[]) {
@@ -157,6 +158,7 @@ export function MatchCard({
                 numberOfSets={match.number_of_sets}
                 scoreForm={scoreForm}
                 setScoreForm={setScoreForm}
+                targetScore={match.target_score}
               />
             ) : null}
             <button
@@ -170,58 +172,5 @@ export function MatchCard({
         ) : null}
       </div>
     </article>
-  );
-}
-
-function ScoreGrid({
-  aLabel,
-  bLabel,
-  numberOfSets,
-  scoreForm,
-  setScoreForm
-}: {
-  aLabel: string;
-  bLabel: string;
-  numberOfSets: number;
-  scoreForm: SetScoreForm;
-  setScoreForm: React.Dispatch<React.SetStateAction<SetScoreForm>>;
-}) {
-  const allColumns: Array<{ set: string; a: keyof SetScoreForm; b: keyof SetScoreForm }> = [
-    { set: "1", a: "set1A", b: "set1B" },
-    { set: "2", a: "set2A", b: "set2B" },
-    { set: "3", a: "set3A", b: "set3B" }
-  ];
-  const columns = allColumns.slice(0, Math.min(Math.max(numberOfSets, 1), allColumns.length));
-  const majorityNeeded = Math.ceil(columns.length / 2);
-
-  return (
-    <div className="score-grid" aria-label="Set scores">
-      <div />
-      {columns.map((column) => (
-        <strong key={column.set}>{column.set}</strong>
-      ))}
-      <span className="score-player-label">{aLabel}</span>
-      {columns.map((column, index) => (
-        <input
-          key={column.a}
-          min="0"
-          onChange={(event) => setScoreForm((current) => ({ ...current, [column.a]: event.target.value }))}
-          required={index < majorityNeeded}
-          type="number"
-          value={scoreForm[column.a]}
-        />
-      ))}
-      <span className="score-player-label">{bLabel}</span>
-      {columns.map((column, index) => (
-        <input
-          key={column.b}
-          min="0"
-          onChange={(event) => setScoreForm((current) => ({ ...current, [column.b]: event.target.value }))}
-          required={index < majorityNeeded}
-          type="number"
-          value={scoreForm[column.b]}
-        />
-      ))}
-    </div>
   );
 }

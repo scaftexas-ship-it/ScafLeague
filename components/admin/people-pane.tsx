@@ -20,6 +20,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
     password: "",
     role: "player" as UserRole,
     rating: "",
+    duprRating: "",
     playerProfileMode: "__new" as PlayerProfileMode
   });
   const [inviting, setInviting] = useState(false);
@@ -27,6 +28,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
 
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [importFailures, setImportFailures] = useState<Array<{ rowNumber: number; email: string; reason: string }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [linkForm, setLinkForm] = useState({ userId: "", playerProfileId: "" });
@@ -66,10 +68,11 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           displayName: inviteForm.fullName,
           email: inviteForm.email,
           mobileNumber: inviteForm.mobileNumber,
-          rating: inviteForm.rating
+          rating: inviteForm.rating,
+          duprRating: inviteForm.duprRating
         });
         await admin.reloadPlayers();
-        setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
+        setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", duprRating: "", playerProfileMode: "__new" });
         setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
         return;
       }
@@ -91,6 +94,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           role: inviteForm.role,
           mobileNumber: inviteForm.mobileNumber,
           rating: inviteForm.rating,
+          duprRating: inviteForm.duprRating,
           createPlayerProfile,
           playerProfileId: inviteForm.playerProfileMode !== "__new" && inviteForm.playerProfileMode ? inviteForm.playerProfileMode : undefined
         })
@@ -104,10 +108,11 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             displayName: inviteForm.fullName,
             email: inviteForm.email,
             mobileNumber: inviteForm.mobileNumber,
-            rating: inviteForm.rating
+            rating: inviteForm.rating,
+            duprRating: inviteForm.duprRating
           });
           await admin.reloadPlayers();
-          setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
+          setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", duprRating: "", playerProfileMode: "__new" });
           setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
           return;
         }
@@ -116,7 +121,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       }
 
       await Promise.all([admin.reloadAppUsers(), admin.reloadPlayers()]);
-      setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", playerProfileMode: "__new" });
+      setInviteForm({ fullName: "", email: "", mobileNumber: "", password: "", role: "player", rating: "", duprRating: "", playerProfileMode: "__new" });
       setInviteMessage(inviteForm.password ? "Login created." : "Invite sent.");
     } catch (error) {
       setInviteMessage(error instanceof Error ? error.message : "Could not invite the user.");
@@ -129,13 +134,18 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
     if (!admin.supabase || !admin.adminUser) return;
     setImporting(true);
     setImportMessage("Importing...");
+    setImportFailures([]);
+
+    const failures: Array<{ rowNumber: number; email: string; reason: string }> = [];
 
     try {
-      const rows = await parsePeopleImportFile(file);
+      const { rows, skipped } = await parsePeopleImportFile(file);
+      for (const skippedRow of skipped) {
+        failures.push({ rowNumber: skippedRow.rowNumber, email: "", reason: skippedRow.reason });
+      }
 
       let imported = 0;
       let profilesOnly = 0;
-      let failed = 0;
 
       if (admin.serviceRoleConfigured === false) {
         for (const row of rows) {
@@ -146,14 +156,19 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                 displayName: row.fullName,
                 email: row.email,
                 mobileNumber: row.mobileNumber || "",
-                rating: row.rating || ""
+                rating: row.rating || "",
+                duprRating: row.duprRating || ""
               });
               profilesOnly += 1;
-            } catch {
-              failed += 1;
+            } catch (error) {
+              failures.push({ rowNumber: row.rowNumber, email: row.email, reason: error instanceof Error ? error.message : "Could not add the player." });
             }
           } else {
-            failed += 1;
+            failures.push({
+              rowNumber: row.rowNumber,
+              email: row.email,
+              reason: "Logins require SUPABASE_SERVICE_ROLE_KEY, which isn't configured on this deployment."
+            });
           }
         }
       } else {
@@ -175,6 +190,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
               role: row.role,
               mobileNumber: row.mobileNumber,
               rating: row.rating,
+              duprRating: row.duprRating,
               createPlayerProfile: row.createPlayerProfile
             })
           });
@@ -192,25 +208,30 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                 displayName: row.fullName,
                 email: row.email,
                 mobileNumber: row.mobileNumber || "",
-                rating: row.rating || ""
+                rating: row.rating || "",
+                duprRating: row.duprRating || ""
               });
               profilesOnly += 1;
-            } catch {
-              failed += 1;
+            } catch (error) {
+              failures.push({ rowNumber: row.rowNumber, email: row.email, reason: error instanceof Error ? error.message : "Could not add the player." });
             }
             continue;
           }
 
-          failed += 1;
+          failures.push({ rowNumber: row.rowNumber, email: row.email, reason: result.error || "Could not invite the user." });
         }
       }
 
       await Promise.all([admin.reloadAppUsers(), admin.reloadPlayers()]);
+      setImportFailures(failures);
 
+      const totalRows = rows.length + skipped.length;
       if (profilesOnly > 0) {
-        setImportMessage(`${imported + profilesOnly} of ${rows.length} imported. ${profilesOnly} were player profiles only (logins skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured).`);
-      } else if (failed > 0) {
-        setImportMessage(`${imported} of ${rows.length} imported. ${failed} had errors.`);
+        setImportMessage(
+          `${imported + profilesOnly} of ${totalRows} imported. ${profilesOnly} were player profiles only (logins skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured).${failures.length > 0 ? ` ${failures.length} failed -- see details below.` : ""}`
+        );
+      } else if (failures.length > 0) {
+        setImportMessage(`${imported} of ${totalRows} imported. ${failures.length} failed -- see details below.`);
       } else {
         setImportMessage(`Imported ${imported} people.`);
       }
@@ -344,6 +365,14 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
               />
             </label>
             <label className="field">
+              <span>DUPR (pickleball only, optional)</span>
+              <input
+                disabled={inviteForm.role !== "player"}
+                onChange={(event) => setInviteForm((current) => ({ ...current, duprRating: event.target.value }))}
+                value={inviteForm.duprRating}
+              />
+            </label>
+            <label className="field">
               <span>Player profile</span>
               <select
                 disabled={inviteForm.role !== "player"}
@@ -394,10 +423,33 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             />
           </label>
           <p className="subtle">
-            Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, mobile_number, role, password, rating, create_player_profile. Without
-            SUPABASE_SERVICE_ROLE_KEY, player profiles import but login accounts are skipped.
+            Upload CSV, TSV, XLS, or XLSX with columns: full_name, email, mobile_number, role, password, rating, dupr, create_player_profile. DUPR is
+            optional and only meaningful for pickleball players. Without SUPABASE_SERVICE_ROLE_KEY, player profiles import but login accounts are
+            skipped.
           </p>
           <StatusBanner message={importMessage} />
+          {importFailures.length > 0 ? (
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Row</th>
+                    <th>Email</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importFailures.map((failure) => (
+                    <tr key={failure.rowNumber}>
+                      <td>{failure.rowNumber}</td>
+                      <td>{failure.email || <span className="subtle">—</span>}</td>
+                      <td>{failure.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
 
           <div className="section-title">
             <h2>Link Existing Login</h2>
@@ -509,6 +561,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Rating</th>
+                  <th>DUPR</th>
                   <th>Mobile</th>
                   <th>Linked login</th>
                   <th></th>
@@ -522,6 +575,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                       <td>{player.display_name}</td>
                       <td>{player.email || <span className="subtle">—</span>}</td>
                       <td>{player.rating || <span className="subtle">—</span>}</td>
+                      <td>{player.dupr_rating || <span className="subtle">—</span>}</td>
                       <td>{player.mobile_number || <span className="subtle">—</span>}</td>
                       <td>
                         {linkedUser ? (

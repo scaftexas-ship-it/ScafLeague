@@ -39,6 +39,7 @@ create table public.player_profiles (
   email text,
   mobile_number text,
   rating text,
+  dupr_rating text,
   created_at timestamptz not null default now()
 );
 
@@ -261,9 +262,11 @@ create policy "players claim own profile by email" on public.player_profiles for
 ) with check (user_id = auth.uid());
 
 create policy "authenticated read tournaments" on public.tournaments for select to authenticated using (true);
+create policy "anyone can read tournaments for the public leaderboard" on public.tournaments for select to anon using (true);
 create policy "admins manage tournaments" on public.tournaments for all using (public.is_admin()) with check (public.is_admin());
 
 create policy "authenticated read divisions" on public.divisions for select to authenticated using (true);
+create policy "anyone can read divisions for the public leaderboard" on public.divisions for select to anon using (true);
 create policy "admins manage divisions" on public.divisions for all using (public.is_admin()) with check (public.is_admin());
 
 create policy "authenticated read teams" on public.teams for select to authenticated using (true);
@@ -273,6 +276,7 @@ create policy "authenticated read team members" on public.team_members for selec
 create policy "admins manage team members" on public.team_members for all using (public.is_admin()) with check (public.is_admin());
 
 create policy "authenticated read division entries" on public.division_entries for select to authenticated using (true);
+create policy "anyone can read division entries for the public leaderboard" on public.division_entries for select to anon using (true);
 create policy "admins manage division entries" on public.division_entries for all using (public.is_admin()) with check (public.is_admin());
 
 create policy "players create registrations" on public.registrations for insert to authenticated with check (

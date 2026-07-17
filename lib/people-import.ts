@@ -2,16 +2,23 @@ import * as XLSX from "xlsx";
 import type { UserRole } from "./types";
 
 export type PeopleImportRow = {
+  rowNumber: number;
   fullName: string;
   email: string;
   password?: string;
   role: UserRole;
   rating?: string;
+  duprRating?: string;
   mobileNumber?: string;
   createPlayerProfile: boolean;
 };
 
-const EXPECTED_COLUMNS = "full_name, email, mobile_number, role, password, rating, create_player_profile";
+export type SkippedImportRow = {
+  rowNumber: number;
+  reason: string;
+};
+
+const EXPECTED_COLUMNS = "full_name, email, mobile_number, role, password, rating, dupr, create_player_profile";
 
 const HEADER_ALIASES: Record<string, keyof RawRow> = {
   full_name: "fullName",
@@ -24,6 +31,9 @@ const HEADER_ALIASES: Record<string, keyof RawRow> = {
   role: "role",
   password: "password",
   rating: "rating",
+  dupr: "duprRating",
+  dupr_rating: "duprRating",
+  duprrating: "duprRating",
   create_player_profile: "createPlayerProfile",
   createplayerprofile: "createPlayerProfile"
 };
@@ -35,22 +45,33 @@ type RawRow = {
   role?: string;
   password?: string;
   rating?: string;
+  duprRating?: string;
   createPlayerProfile?: string;
 };
 
 export class PeopleImportError extends Error {}
 
-export async function parsePeopleImportFile(file: File): Promise<PeopleImportRow[]> {
+export async function parsePeopleImportFile(file: File): Promise<{ rows: PeopleImportRow[]; skipped: SkippedImportRow[] }> {
   const extension = file.name.split(".").pop()?.toLowerCase() || "";
   const rawRows = ["xls", "xlsx"].includes(extension) ? await parseSpreadsheet(file) : await parseDelimited(file, extension);
 
-  const rows = rawRows.map(normalizeRow).filter((row): row is PeopleImportRow => row !== null);
+  const rows: PeopleImportRow[] = [];
+  const skipped: SkippedImportRow[] = [];
 
-  if (rows.length === 0) {
+  rawRows.forEach((raw, index) => {
+    // Row 1 is the header, so the first data row is row 2 -- matches what a
+    // person sees looking at the file in Excel/Sheets.
+    const rowNumber = index + 2;
+    const result = normalizeRow(raw, rowNumber);
+    if (result.row) rows.push(result.row);
+    else skipped.push({ rowNumber, reason: result.reason });
+  });
+
+  if (rows.length === 0 && skipped.length === 0) {
     throw new PeopleImportError(`No people found. Use columns: ${EXPECTED_COLUMNS}.`);
   }
 
-  return rows;
+  return { rows, skipped };
 }
 
 async function parseSpreadsheet(file: File): Promise<RawRow[]> {
@@ -119,26 +140,33 @@ function mapHeaders(record: Record<string, unknown>): RawRow {
   return row;
 }
 
-function normalizeRow(row: RawRow): PeopleImportRow | null {
+function normalizeRow(row: RawRow, rowNumber: number): { row: PeopleImportRow; reason?: undefined } | { row?: undefined; reason: string } {
   const fullName = (row.fullName || "").trim();
   const email = (row.email || "").trim().toLowerCase();
-  if (!fullName || !email) return null;
+  if (!fullName && !email) return { reason: "Missing full name and email." };
+  if (!fullName) return { reason: "Missing full name." };
+  if (!email) return { reason: "Missing email." };
 
   const role: UserRole = (row.role || "").trim().toLowerCase() === "admin" ? "admin" : "player";
   const password = (row.password || "").trim();
   const rating = (row.rating || "").trim();
+  const duprRating = (row.duprRating || "").trim();
   const mobileNumber = (row.mobileNumber || "").trim();
   const createPlayerProfile =
     role === "player" && (row.createPlayerProfile === undefined || row.createPlayerProfile === "" || isTruthy(row.createPlayerProfile));
 
   return {
-    fullName,
-    email,
-    password: password || undefined,
-    role,
-    rating: rating || undefined,
-    mobileNumber: mobileNumber || undefined,
-    createPlayerProfile
+    row: {
+      rowNumber,
+      fullName,
+      email,
+      password: password || undefined,
+      role,
+      rating: rating || undefined,
+      duprRating: duprRating || undefined,
+      mobileNumber: mobileNumber || undefined,
+      createPlayerProfile
+    }
   };
 }
 

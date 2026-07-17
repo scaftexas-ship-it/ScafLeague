@@ -18,8 +18,9 @@ import {
 } from "@/lib/admin-data";
 import type { DivisionEntryRow, DivisionRow, MatchRow, PlayerProfileRow, TeamMemberRow, TournamentRow } from "@/lib/admin-data";
 import { listAllPlayersInClub, listEntriesForPlayerIds, listEntriesForTeamIds, listPlayerProfilesForUser, listTeamIdsForPlayerIds } from "@/lib/player-data";
-import { getWinnerEntryId } from "@/lib/match-scoring";
+import { validateMatchSets } from "@/lib/match-scoring";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
@@ -43,6 +44,7 @@ export function PlayerWorkspace() {
   const [message, setMessage] = useState("Loading player schedule...");
   const [sportFilter, setSportFilter] = useState<Sport | "all">("all");
   const [tournamentFilter, setTournamentFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<"mine" | "all" | "points">("mine");
 
   useEffect(() => {
     void load();
@@ -131,14 +133,17 @@ export function PlayerWorkspace() {
 
   async function submitScore(match: MatchRow, sets: MatchSet[]) {
     if (!supabase) return;
-    const winnerEntryId = getWinnerEntryId(
-      { entryAId: match.entry_a_id, entryBId: match.entry_b_id, numberOfSets: match.number_of_sets },
-      sets
-    );
-    if (!winnerEntryId) {
-      setMessage("Enter a valid score with a clear winner.");
+    const result = validateMatchSets(sets, {
+      entryAId: match.entry_a_id,
+      entryBId: match.entry_b_id,
+      numberOfSets: match.number_of_sets,
+      targetScore: match.target_score
+    });
+    if (!result.ok) {
+      setMessage(result.error);
       return;
     }
+    const winnerEntryId = result.winnerEntryId;
 
     try {
       await replaceMatchSets(
@@ -256,84 +261,98 @@ export function PlayerWorkspace() {
       ) : null}
 
       <section className="stack">
-        <div className="card">
-          <div className="section-title">
-            <h2>My Games</h2>
-            <Send size={22} aria-hidden />
-          </div>
-          {visibleMyMatches.length > 0 ? (
-            <div className="match-list">
-              {visibleMyMatches.map((match) => (
-                <MatchCard
-                  canAct={myEntryIds.length === 0 || myEntryIds.includes(match.entry_a_id) || myEntryIds.includes(match.entry_b_id)}
-                  division={divisions.find((division) => division.id === match.division_id)}
-                  entryA={entries.find((entry) => entry.id === match.entry_a_id)}
-                  entryB={entries.find((entry) => entry.id === match.entry_b_id)}
-                  key={match.id}
-                  match={match}
-                  myEntryIds={myEntryIds}
-                  onClaimForfeit={claimForfeit}
-                  onSubmitScore={submitScore}
-                  players={allPlayers}
-                  teamMembers={teamMembers}
-                  tournamentName={tournamentForDivision(match.division_id)?.name}
-                />
-              ))}
+        <SegmentedControl
+          ariaLabel="Player view"
+          onChange={setActiveTab}
+          options={[
+            { value: "mine", label: "My Games" },
+            { value: "all", label: "All Games" },
+            { value: "points", label: "Points" }
+          ]}
+          value={activeTab}
+        />
+
+        {activeTab === "mine" ? (
+          <div className="card">
+            <div className="section-title">
+              <h2>My Games</h2>
+              <Send size={22} aria-hidden />
             </div>
-          ) : (
-            <EmptyState icon={<Flag size={24} aria-hidden />} title="No games" />
-          )}
-        </div>
-      </section>
-
-      {singleTournamentDivisions.length > 0 ? (
-        <section className="stack">
-          <TournamentLeaderboard divisions={singleTournamentDivisions} entries={entries} standings={standings} />
-        </section>
-      ) : null}
-
-      <section className="grid two">
-        <div className="card">
-          <div className="section-title">
-            <h2>All Games</h2>
-            <ClipboardList size={22} aria-hidden />
+            {visibleMyMatches.length > 0 ? (
+              <div className="match-list">
+                {visibleMyMatches.map((match) => (
+                  <MatchCard
+                    canAct={myEntryIds.length === 0 || myEntryIds.includes(match.entry_a_id) || myEntryIds.includes(match.entry_b_id)}
+                    division={divisions.find((division) => division.id === match.division_id)}
+                    entryA={entries.find((entry) => entry.id === match.entry_a_id)}
+                    entryB={entries.find((entry) => entry.id === match.entry_b_id)}
+                    key={match.id}
+                    match={match}
+                    myEntryIds={myEntryIds}
+                    onClaimForfeit={claimForfeit}
+                    onSubmitScore={submitScore}
+                    players={allPlayers}
+                    teamMembers={teamMembers}
+                    tournamentName={tournamentForDivision(match.division_id)?.name}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={<Flag size={24} aria-hidden />} title="No games" />
+            )}
           </div>
-          {visibleMatches.length > 0 ? (
-            <div className="match-list">
-              {visibleMatches.map((match) => {
-                const division = divisions.find((item) => item.id === match.division_id);
-                const entryA = entries.find((entry) => entry.id === match.entry_a_id);
-                const entryB = entries.find((entry) => entry.id === match.entry_b_id);
-                const matchTournament = tournamentForDivision(match.division_id);
-                return (
-                  <article className="match-card" key={match.id}>
-                    <div className="match-meta">
-                      {matchTournament ? <span className="pill">{matchTournament.name}</span> : null}
-                      <span className="pill blue">{division?.name || "Schedule"}</span>
-                      <span className="pill">{match.round_label || `Round ${match.round}`}</span>
-                      <span className="pill">To {match.target_score}</span>
-                    </div>
-                    <div className="versus">
-                      <span>{entryA?.label || "Entry A"}</span>
-                      <span className="subtle">vs</span>
-                      <span>{entryB?.label || "Entry B"}</span>
-                    </div>
-                    <div className="score-line">
-                      <span className="subtle">
-                        {match.schedule_week_start} to {match.extension_week_end}
-                      </span>
-                      <span className="pill orange">{match.status.replace(/_/g, " ")}</span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState icon={<ClipboardList size={24} aria-hidden />} title="No games" />
-          )}
-        </div>
+        ) : null}
 
-        <PointsTable divisions={visibleDivisions} entries={entries} standings={standings} />
+        {activeTab === "all" ? (
+          <div className="card">
+            <div className="section-title">
+              <h2>All Games</h2>
+              <ClipboardList size={22} aria-hidden />
+            </div>
+            {visibleMatches.length > 0 ? (
+              <div className="match-list">
+                {visibleMatches.map((match) => {
+                  const division = divisions.find((item) => item.id === match.division_id);
+                  const entryA = entries.find((entry) => entry.id === match.entry_a_id);
+                  const entryB = entries.find((entry) => entry.id === match.entry_b_id);
+                  const matchTournament = tournamentForDivision(match.division_id);
+                  return (
+                    <article className="match-card" key={match.id}>
+                      <div className="match-meta">
+                        {matchTournament ? <span className="pill">{matchTournament.name}</span> : null}
+                        <span className="pill blue">{division?.name || "Schedule"}</span>
+                        <span className="pill">{match.round_label || `Round ${match.round}`}</span>
+                        <span className="pill">To {match.target_score}</span>
+                      </div>
+                      <div className="versus">
+                        <span>{entryA?.label || "Entry A"}</span>
+                        <span className="subtle">vs</span>
+                        <span>{entryB?.label || "Entry B"}</span>
+                      </div>
+                      <div className="score-line">
+                        <span className="subtle">
+                          {match.schedule_week_start} to {match.extension_week_end}
+                        </span>
+                        <span className="pill orange">{match.status.replace(/_/g, " ")}</span>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState icon={<ClipboardList size={24} aria-hidden />} title="No games" />
+            )}
+          </div>
+        ) : null}
+
+        {activeTab === "points" ? (
+          <div className="stack">
+            {singleTournamentDivisions.length > 0 ? (
+              <TournamentLeaderboard divisions={singleTournamentDivisions} entries={entries} standings={standings} />
+            ) : null}
+            <PointsTable divisions={visibleDivisions} entries={entries} standings={standings} />
+          </div>
+        ) : null}
       </section>
     </>
   );

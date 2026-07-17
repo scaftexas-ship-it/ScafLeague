@@ -44,6 +44,7 @@ export type PlayerProfileRow = {
   email: string | null;
   mobile_number: string | null;
   rating: string | null;
+  dupr_rating: string | null;
 };
 
 export type AppUserRow = {
@@ -213,6 +214,17 @@ export async function listTournaments(supabase: SupabaseClient, clubId: string) 
   return (data || []) as TournamentRow[];
 }
 
+/** Single tournament by id, not scoped to a club -- used by the public leaderboard page, which only has a tournament id from the URL. */
+export async function getTournament(supabase: SupabaseClient, tournamentId: string) {
+  const { data, error } = await supabase
+    .from("tournaments")
+    .select("id, club_id, name, sport, start_date, end_date")
+    .eq("id", tournamentId)
+    .maybeSingle();
+  if (error) fail(error, "Could not load the tournament.");
+  return data as TournamentRow | null;
+}
+
 export async function createTournament(
   supabase: SupabaseClient,
   input: { clubId: string; name: string; sport: Sport; startDate: string; endDate: string; createdBy: string }
@@ -283,7 +295,7 @@ export async function deleteDivision(supabase: SupabaseClient, divisionId: strin
 export async function listPlayers(supabase: SupabaseClient, clubId: string) {
   const { data, error } = await supabase
     .from("player_profiles")
-    .select("id, club_id, user_id, display_name, email, mobile_number, rating")
+    .select("id, club_id, user_id, display_name, email, mobile_number, rating, dupr_rating")
     .eq("club_id", clubId)
     .order("display_name", { ascending: true });
   if (error) fail(error, "Could not load players.");
@@ -292,7 +304,7 @@ export async function listPlayers(supabase: SupabaseClient, clubId: string) {
 
 export async function addPlayer(
   supabase: SupabaseClient,
-  input: { clubId: string; displayName: string; email?: string; mobileNumber: string; rating: string }
+  input: { clubId: string; displayName: string; email?: string; mobileNumber: string; rating: string; duprRating?: string }
 ) {
   const { data, error } = await supabase
     .from("player_profiles")
@@ -301,9 +313,10 @@ export async function addPlayer(
       display_name: input.displayName,
       email: input.email?.trim() || null,
       mobile_number: input.mobileNumber.trim() || null,
-      rating: input.rating.trim() || null
+      rating: input.rating.trim() || null,
+      dupr_rating: input.duprRating?.trim() || null
     })
-    .select("id, club_id, user_id, display_name, email, mobile_number, rating")
+    .select("id, club_id, user_id, display_name, email, mobile_number, rating, dupr_rating")
     .single();
   if (error) fail(error, "Could not add the player.");
   return data as PlayerProfileRow;

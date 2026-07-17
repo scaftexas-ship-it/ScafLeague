@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Link2 } from "lucide-react";
 import { createTournament, deleteTournament } from "@/lib/admin-data";
 import { SCORING_RULES } from "@/lib/types";
 import type { Sport } from "@/lib/types";
@@ -54,6 +55,16 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
       setMessage("Tournament deleted.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not delete the tournament.");
+    }
+  }
+
+  async function copyLeaderboardLink() {
+    const url = `${window.location.origin}/leaderboard/?tournament=${admin.selectedTournamentId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage("Public leaderboard link copied -- anyone with it can view without signing in.");
+    } catch {
+      setMessage(url);
     }
   }
 
@@ -114,6 +125,12 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
                 ))}
               </select>
             </label>
+            {admin.selectedTournamentId ? (
+              <button className="button secondary small" onClick={copyLeaderboardLink} type="button">
+                <Link2 size={14} aria-hidden />
+                Copy public leaderboard link
+              </button>
+            ) : null}
             {admin.selectedTournamentId ? (
               <ConfirmButton
                 confirmLabel={`Delete${admin.divisions.length > 0 ? ` (${admin.divisions.length} division${admin.divisions.length === 1 ? "" : "s"})` : ""}?`}

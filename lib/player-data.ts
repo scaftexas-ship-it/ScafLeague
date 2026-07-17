@@ -9,7 +9,7 @@ function fail(error: { message?: string } | null, fallback: string): never {
 export async function listPlayerProfilesForUser(supabase: SupabaseClient, userId: string) {
   const { data, error } = await supabase
     .from("player_profiles")
-    .select("id, club_id, user_id, display_name, email, mobile_number, rating")
+    .select("id, club_id, user_id, display_name, email, mobile_number, rating, dupr_rating")
     .eq("user_id", userId);
   if (error) fail(error, "Could not load your player profile.");
   return (data || []) as PlayerProfileRow[];
@@ -41,7 +41,7 @@ export async function listEntriesForTeamIds(supabase: SupabaseClient, teamIds: s
 
 /** All player profiles in a club, used to resolve opponent contact info. */
 export async function listAllPlayersInClub(supabase: SupabaseClient, clubId: string) {
-  const { data, error } = await supabase.from("player_profiles").select("id, club_id, user_id, display_name, email, mobile_number, rating").eq("club_id", clubId);
+  const { data, error } = await supabase.from("player_profiles").select("id, club_id, user_id, display_name, email, mobile_number, rating, dupr_rating").eq("club_id", clubId);
   if (error) fail(error, "Could not load the player directory.");
   return (data || []) as PlayerProfileRow[];
 }

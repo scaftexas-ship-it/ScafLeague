@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { Pencil } from "lucide-react";
-import { buildSetsFromForm, getWinnerEntryId, setScoreFormFromSets } from "@/lib/match-scoring";
+import { addDays } from "@/lib/league-rules";
+import { buildSetsFromForm, canSubmitScoreInWindow, setScoreFormFromSets, validateMatchSets } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
-import { formatStatusLabel } from "@/lib/format";
+import { formatStatusLabel, todayIso } from "@/lib/format";
 import type { DivisionEntryRow, MatchRow, MatchSetRow } from "@/lib/admin-data";
 import type { MatchStatus } from "@/lib/types";
+import { ScoreGrid } from "@/components/ui/score-grid";
 
 const STATUS_OPTIONS: MatchStatus[] = ["scheduled", "score_submitted", "completed", "forfeit", "cancelled"];
 
@@ -53,6 +55,9 @@ export function MatchEditor({
   const [forfeitWinnerId, setForfeitWinnerId] = useState(match.winner_entry_id || "");
   const [localMessage, setLocalMessage] = useState("");
 
+  const today = todayIso();
+  const canScoreUpdate = canSubmitScoreInWindow(match, today, addDays);
+
   async function handleSave() {
     setLocalMessage("");
     const patch: MatchEditPatch = {
@@ -70,16 +75,22 @@ export function MatchEditor({
     let nextSets: ReturnType<typeof buildSetsFromForm> = [];
 
     if (status === "completed" || status === "score_submitted") {
-      nextSets = buildSetsFromForm(scoreForm);
-      const winnerEntryId = getWinnerEntryId(
-        { entryAId: match.entry_a_id, entryBId: match.entry_b_id, numberOfSets: match.number_of_sets },
-        nextSets
-      );
-      if (!winnerEntryId) {
-        setLocalMessage("Enter a valid score with a clear winner.");
+      if (!canScoreUpdate) {
+        setLocalMessage("Score updates are outside the allowed schedule window for this match. Adjust the schedule dates above to allow it.");
         return;
       }
-      patch.winner_entry_id = winnerEntryId;
+      nextSets = buildSetsFromForm(scoreForm);
+      const result = validateMatchSets(nextSets, {
+        entryAId: match.entry_a_id,
+        entryBId: match.entry_b_id,
+        numberOfSets: match.number_of_sets,
+        targetScore: Number(targetScore) || match.target_score
+      });
+      if (!result.ok) {
+        setLocalMessage(result.error);
+        return;
+      }
+      patch.winner_entry_id = result.winnerEntryId;
     } else if (status === "forfeit") {
       if (!forfeitWinnerId) {
         setLocalMessage("Choose which entry gets the forfeit win.");
@@ -160,20 +171,18 @@ export function MatchEditor({
           </div>
 
           {status === "completed" || status === "score_submitted" ? (
-            <div className="score-grid" aria-label="Set scores">
-              <div />
-              <strong>1</strong>
-              <strong>2</strong>
-              <strong>3</strong>
-              <span className="score-player-label">{entryA?.label || "A"}</span>
-              <input min={0} onChange={(event) => setScoreForm((current) => ({ ...current, set1A: event.target.value }))} type="number" value={scoreForm.set1A} />
-              <input min={0} onChange={(event) => setScoreForm((current) => ({ ...current, set2A: event.target.value }))} type="number" value={scoreForm.set2A} />
-              <input min={0} onChange={(event) => setScoreForm((current) => ({ ...current, set3A: event.target.value }))} type="number" value={scoreForm.set3A} />
-              <span className="score-player-label">{entryB?.label || "B"}</span>
-              <input min={0} onChange={(event) => setScoreForm((current) => ({ ...current, set1B: event.target.value }))} type="number" value={scoreForm.set1B} />
-              <input min={0} onChange={(event) => setScoreForm((current) => ({ ...current, set2B: event.target.value }))} type="number" value={scoreForm.set2B} />
-              <input min={0} onChange={(event) => setScoreForm((current) => ({ ...current, set3B: event.target.value }))} type="number" value={scoreForm.set3B} />
-            </div>
+            !canScoreUpdate ? (
+              <p className="subtle">Score updates are outside the allowed schedule window for this match. Adjust the schedule dates above to allow it.</p>
+            ) : (
+              <ScoreGrid
+                aLabel={entryA?.label || "A"}
+                bLabel={entryB?.label || "B"}
+                numberOfSets={match.number_of_sets}
+                scoreForm={scoreForm}
+                setScoreForm={setScoreForm}
+                targetScore={Number(targetScore) || match.target_score}
+              />
+            )
           ) : null}
 
           {status === "forfeit" ? (
@@ -189,7 +198,12 @@ export function MatchEditor({
 
           {localMessage ? <p className="status-banner" data-tone="error">{localMessage}</p> : null}
 
-          <button className="button" disabled={saving} onClick={handleSave} type="button">
+          <button
+            className="button"
+            disabled={saving || ((status === "completed" || status === "score_submitted") && !canScoreUpdate)}
+            onClick={handleSave}
+            type="button"
+          >
             {saving ? "Saving..." : "Save match"}
           </button>
         </div>
