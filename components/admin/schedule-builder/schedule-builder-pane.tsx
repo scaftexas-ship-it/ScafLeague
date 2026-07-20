@@ -21,6 +21,7 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "../use-admin-data";
 import { useScheduleBuilder } from "./use-schedule-builder";
 import { EntityPicker } from "./entity-picker";
+import { QualifierPicker } from "./qualifier-picker";
 import { ManualMatchups } from "./manual-matchups";
 
 export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
@@ -185,9 +186,12 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
         });
       const insertedEntries = await insertDivisionEntries(admin.supabase, missingRows);
       const allEntries = [...existingEntries, ...insertedEntries];
-      const selectedEntries = allEntries.filter((entry) =>
-        state.format === "doubles" ? selectedIds.includes(entry.team_id || "") : selectedIds.includes(entry.player_id || "")
-      );
+      // Preserve selectedIds' order (not allEntries' order) -- this is the
+      // seed order for an eliminator bracket (see generateEliminatorSchedule),
+      // so who was picked/auto-filled first pairs with who was picked last.
+      const selectedEntries = selectedIds
+        .map((id) => allEntries.find((entry) => (state.format === "doubles" ? entry.team_id === id : entry.player_id === id)))
+        .filter((entry): entry is (typeof allEntries)[number] => Boolean(entry));
 
       const targetScore = state.changeWinningScore ? Number(state.targetScore) || 11 : 11;
       const numberOfSets = Number(state.numberOfSets) || 3;
@@ -437,6 +441,18 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
               Back
             </button>
           </div>
+
+          {state.scheduleType === "eliminator" ? (
+            <QualifierPicker
+              divisionEntries={admin.divisionEntries}
+              divisions={admin.divisions}
+              excludeDivisionId={state.divisionId}
+              format={state.format}
+              matches={admin.matches}
+              matchSets={admin.matchSets}
+              onApply={(refIds) => builder.patch(state.format === "doubles" ? { selectedTeamIds: refIds } : { selectedPlayerIds: refIds })}
+            />
+          ) : null}
 
           {state.format === "doubles" ? (
             <div className="stack">

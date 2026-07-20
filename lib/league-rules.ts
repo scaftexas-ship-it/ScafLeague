@@ -129,6 +129,13 @@ export function calculateStandings(entries: DivisionEntry[], matches: Match[]): 
   return Array.from(standings.values()).sort((a, b) => b.points - a.points || b.wins - a.wins || b.setsWon - a.setsWon);
 }
 
+/** Reorders entries best-to-worst by current standings, for seeding a playoff bracket off group results (top-4 to semifinals, top-N from two divisions combined into cross-group quarterfinals, etc). Entries with no standings row yet (haven't played) sort last, in their original order. */
+export function rankEntriesByStandings(entries: DivisionEntry[], matches: Match[]): DivisionEntry[] {
+  const standings = calculateStandings(entries, matches);
+  const rank = new Map(standings.map((standing, index) => [standing.entryId, index]));
+  return [...entries].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+}
+
 export function generateRoundRobinSchedule(params: {
   divisionId: string;
   entries: DivisionEntry[];
@@ -201,7 +208,12 @@ export function generateEliminatorSchedule(params: {
   startDate: string;
   endDate: string;
 }): Match[] {
-  const entries = [...params.entries].sort((a, b) => a.label.localeCompare(b.label));
+  // Seed order matters: entries[0] pairs with entries[n-1], entries[1] with
+  // entries[n-2], and so on (standard bracket seeding), and whoever's first
+  // gets any bye when the field isn't a power of two. Callers control this
+  // order deliberately (e.g. rankEntriesByStandings for a playoff bracket,
+  // or manual pick order) -- it's no longer forced alphabetical here.
+  const entries = params.entries;
   if (entries.length < 2) return [];
 
   const scheduleWeekStart = params.startDate;

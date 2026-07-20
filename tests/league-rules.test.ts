@@ -5,7 +5,8 @@ import {
   canClaimForfeit,
   expireUnplayedMatches,
   generateEliminatorSchedule,
-  generateRoundRobinSchedule
+  generateRoundRobinSchedule,
+  rankEntriesByStandings
 } from "../lib/league-rules.ts";
 import type { DivisionEntry, Match } from "../lib/types.ts";
 
@@ -97,6 +98,73 @@ test("generates pre-quarter eliminator play-in matches when entries need byes", 
 
   assert.equal(matches.length, 4);
   assert.equal(matches.every((match) => match.roundLabel === "Pre Quarterfinal"), true);
+});
+
+test("generateEliminatorSchedule seeds by input order (best plays worst), not alphabetically", () => {
+  // Deliberately out of alphabetical order: entries[0] is the top seed.
+  const seeded: DivisionEntry[] = [
+    { id: "e-4", divisionId: "d-1", label: "D (seed 1)", playerIds: [] },
+    { id: "e-3", divisionId: "d-1", label: "C (seed 2)", playerIds: [] },
+    { id: "e-2", divisionId: "d-1", label: "B (seed 3)", playerIds: [] },
+    { id: "e-1", divisionId: "d-1", label: "A (seed 4)", playerIds: [] }
+  ];
+  const matches = generateEliminatorSchedule({ divisionId: "d-1", entries: seeded, startDate: "2026-07-06", endDate: "2026-09-30" });
+
+  assert.equal(matches.length, 2);
+  // Seed 1 vs seed 4, seed 2 vs seed 3 -- classic bracket seeding, not "A vs B" alphabetical.
+  const pairs = matches.map((match) => [match.entryAId, match.entryBId].sort());
+  assert.deepEqual(pairs, [
+    ["e-1", "e-4"],
+    ["e-2", "e-3"]
+  ]);
+});
+
+test("rankEntriesByStandings orders entries best-to-worst by current results", () => {
+  const played: Match = {
+    id: "m-1",
+    divisionId: "d-1",
+    round: 1,
+    entryAId: "e-1",
+    entryBId: "e-2",
+    scheduleWeekStart: "2026-07-06",
+    scheduleWeekEnd: "2026-07-12",
+    extensionWeekStart: "2026-07-13",
+    extensionWeekEnd: "2026-07-19",
+    status: "completed",
+    sets: [
+      { setNumber: 1, entryAScore: 11, entryBScore: 5 },
+      { setNumber: 2, entryAScore: 11, entryBScore: 7 }
+    ]
+  };
+  const ranked = rankEntriesByStandings(entries, [played]);
+  // e-1 won (4 points), e-2 lost with no sets won (1 point); e-3/e-4 haven't
+  // played yet and sort after anyone with a standings row.
+  assert.deepEqual(
+    ranked.map((entry) => entry.id),
+    ["e-1", "e-2", "e-3", "e-4"]
+  );
+});
+
+test("cross-group seeding: concatenating two divisions' ranked top-N gives an all-cross-division first round", () => {
+  // Two divisions, top 2 from each, ranked best-to-worst within their own group.
+  const groupA: DivisionEntry[] = [
+    { id: "a-1", divisionId: "div-a", label: "A1", playerIds: [] },
+    { id: "a-2", divisionId: "div-a", label: "A2", playerIds: [] }
+  ];
+  const groupB: DivisionEntry[] = [
+    { id: "b-1", divisionId: "div-b", label: "B1", playerIds: [] },
+    { id: "b-2", divisionId: "div-b", label: "B2", playerIds: [] }
+  ];
+  // Exactly what QualifierPicker builds: division A's ranked block, then division B's ranked block.
+  const seeded = [...groupA, ...groupB];
+  const matches = generateEliminatorSchedule({ divisionId: "qf-division", entries: seeded, startDate: "2026-07-06", endDate: "2026-09-30" });
+
+  assert.equal(matches.length, 2);
+  for (const match of matches) {
+    const aIsGroupA = match.entryAId.startsWith("a-");
+    const bIsGroupA = match.entryBId.startsWith("a-");
+    assert.notEqual(aIsGroupA, bIsGroupA, `expected a cross-group match, got ${match.entryAId} vs ${match.entryBId}`);
+  }
 });
 
 test("forfeit can only be claimed during scheduled week by a match entry", () => {
