@@ -918,6 +918,11 @@ button {
 }
 
 .score-player-label {
+  /* Anchors each row to column 1 -- without this, a match with fewer than 3
+     visible set columns (1 or 2 sets) leaves empty cells in the header row
+     that grid auto-placement fills with this label and its first input
+     instead of starting a new row, scrambling the whole layout. */
+  grid-column: 1;
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
