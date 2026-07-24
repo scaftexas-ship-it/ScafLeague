@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createDivision,
-  createTeam as createTeamRow,
   deleteDivision,
   deleteMatches,
   insertDivisionEntries,
@@ -19,6 +18,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SwitchField } from "@/components/ui/switch-field";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "../use-admin-data";
+import { TeamCreator } from "../team-creator";
 import { useScheduleBuilder } from "./use-schedule-builder";
 import { EntityPicker } from "./entity-picker";
 import { QualifierPicker } from "./qualifier-picker";
@@ -30,8 +30,6 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
   const { state } = builder;
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [creatingTeam, setCreatingTeam] = useState(false);
-  const [teamForm, setTeamForm] = useState({ name: "", playerAId: "", playerBId: "" });
   const [bulkForm, setBulkForm] = useState({ numberOfSets: "", targetScore: "" });
   const [applyingBulkSettings, setApplyingBulkSettings] = useState(false);
 
@@ -93,31 +91,6 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
       selectedPlayerIds: division.format === "singles" ? existingEntries.filter((entry) => entry.player_id).map((entry) => entry.player_id as string) : [],
       selectedTeamIds: division.format === "doubles" ? existingEntries.filter((entry) => entry.team_id).map((entry) => entry.team_id as string) : []
     });
-  }
-
-  async function createTeam() {
-    if (!admin.supabase || !admin.adminUser) return;
-    if (!teamForm.playerAId || !teamForm.playerBId || teamForm.playerAId === teamForm.playerBId) {
-      setMessage("Choose two different players for the team.");
-      return;
-    }
-    const playerA = admin.players.find((player) => player.id === teamForm.playerAId);
-    const playerB = admin.players.find((player) => player.id === teamForm.playerBId);
-    if (!playerA || !playerB) return;
-    const name = teamForm.name.trim() || `${playerA.display_name} / ${playerB.display_name}`;
-
-    setCreatingTeam(true);
-    try {
-      const team = await createTeamRow(admin.supabase, { clubId: admin.adminUser.club_id, name, playerAId: teamForm.playerAId, playerBId: teamForm.playerBId });
-      await admin.reloadTeams();
-      builder.patch({ selectedTeamIds: [...state.selectedTeamIds, team.id] });
-      setTeamForm({ name: "", playerAId: "", playerBId: "" });
-      setMessage("Team created.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not create the team.");
-    } finally {
-      setCreatingTeam(false);
-    }
   }
 
   async function removeDivision(divisionId: string) {
@@ -193,7 +166,11 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
         .map((id) => allEntries.find((entry) => (state.format === "doubles" ? entry.team_id === id : entry.player_id === id)))
         .filter((entry): entry is (typeof allEntries)[number] => Boolean(entry));
 
-      const targetScore = state.changeWinningScore ? Number(state.targetScore) || 11 : 11;
+      // state.targetScore is always pre-filled with the sport's correct
+      // default (see defaultTargetScore in use-schedule-builder.ts) --
+      // "Change Winning Score" only controls whether that field is shown for
+      // editing, it was never meant to gate whether its value is used.
+      const targetScore = Number(state.targetScore) || 11;
       const numberOfSets = Number(state.numberOfSets) || 3;
       const optionsBundle = {
         target_score: targetScore,
@@ -378,7 +355,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
               onChange={(value) => builder.patch({ format: value, divisionId: "" })}
               options={[
                 { value: "singles", label: "Singles" },
-                { value: "doubles", label: "Doubles" }
+                { value: "doubles", label: tournament?.sport === "volleyball" ? "Teams" : "Doubles" }
               ]}
               value={state.format}
             />
@@ -457,37 +434,7 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
           {state.format === "doubles" ? (
             <div className="stack">
               <h3>Build a team</h3>
-              <div className="field-row">
-                <label className="field">
-                  <span>Team name (optional)</span>
-                  <input onChange={(event) => setTeamForm((current) => ({ ...current, name: event.target.value }))} value={teamForm.name} />
-                </label>
-                <label className="field">
-                  <span>Player 1</span>
-                  <select onChange={(event) => setTeamForm((current) => ({ ...current, playerAId: event.target.value }))} value={teamForm.playerAId}>
-                    <option value="">Select</option>
-                    {admin.players.map((player) => (
-                      <option key={player.id} value={player.id}>
-                        {player.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Player 2</span>
-                  <select onChange={(event) => setTeamForm((current) => ({ ...current, playerBId: event.target.value }))} value={teamForm.playerBId}>
-                    <option value="">Select</option>
-                    {admin.players.map((player) => (
-                      <option key={player.id} value={player.id}>
-                        {player.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button className="button secondary small" disabled={creatingTeam} onClick={createTeam} type="button">
-                  Create team
-                </button>
-              </div>
+              <TeamCreator admin={admin} onCreated={(teamIds) => builder.patch({ selectedTeamIds: [...state.selectedTeamIds, ...teamIds] })} />
 
               <EntityPicker
                 emptyText="No teams match your filters yet."

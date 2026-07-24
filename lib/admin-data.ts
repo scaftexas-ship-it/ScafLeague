@@ -423,6 +423,21 @@ export async function createTeam(supabase: SupabaseClient, input: { clubId: stri
   return teamRow;
 }
 
+/**
+ * Bulk-creates name-only teams with no roster -- for sports like volleyball
+ * where teams aren't built from a pair of individually-registered players.
+ * Scores for these are entered by an admin (team_members stays empty, so
+ * there's no player login to satisfy is_entry_member's self-service RLS
+ * check, but admins bypass that check entirely).
+ */
+export async function createTeams(supabase: SupabaseClient, input: { clubId: string; names: string[] }) {
+  if (input.names.length === 0) return [] as TeamRow[];
+  const rows = input.names.map((name) => ({ club_id: input.clubId, name }));
+  const { data, error } = await supabase.from("teams").insert(rows).select("id, club_id, name");
+  if (error) fail(error, "Could not create the teams.");
+  return (data || []) as TeamRow[];
+}
+
 export async function listTeamMembers(supabase: SupabaseClient, teamIds: string[]) {
   if (teamIds.length === 0) return [] as TeamMemberRow[];
   const { data, error } = await supabase.from("team_members").select("team_id, player_id").in("team_id", teamIds);
