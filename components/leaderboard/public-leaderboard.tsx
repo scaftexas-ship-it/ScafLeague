@@ -60,11 +60,14 @@ export function PublicLeaderboard() {
 
   return (
     <div className="stack">
-      <div>
-        <p className="eyebrow">Public leaderboard</p>
-        <h1>{tournament?.name || "Tournament leaderboard"}</h1>
-        {tournament ? <p className="hero-copy">{tournament.sport[0].toUpperCase() + tournament.sport.slice(1)}</p> : null}
-        <StatusBanner message={message} />
+      <div className="spread">
+        <div>
+          <p className="eyebrow">Public leaderboard</p>
+          <h1>{tournament?.name || "Tournament leaderboard"}</h1>
+          {tournament ? <p className="hero-copy">{tournament.sport[0].toUpperCase() + tournament.sport.slice(1)}</p> : null}
+          <StatusBanner message={message} />
+        </div>
+        {tournament?.logo_url ? <img alt="" className="leaderboard-logo" src={tournament.logo_url} /> : null}
       </div>
       {divisions.length > 0 ? (
         <TournamentLeaderboard divisions={divisions} entries={entries} standings={standings} />

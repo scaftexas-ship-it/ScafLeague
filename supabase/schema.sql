@@ -18,6 +18,9 @@ create table public.clubs (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   logo_url text,
+  points_per_win integer not null default 4,
+  points_per_played_loss integer not null default 1,
+  bonus_point_per_set_won_when_lost integer not null default 1,
   created_at timestamptz not null default now()
 );
 
@@ -50,6 +53,7 @@ create table public.tournaments (
   sport public.sport_type not null,
   start_date date not null,
   end_date date not null,
+  logo_url text,
   created_by uuid references public.users(id),
   created_at timestamptz not null default now(),
   check (end_date >= start_date)
@@ -165,12 +169,12 @@ match_points as (
     case when m.status = 'forfeit' and m.winner_entry_id <> e.id then 1 else 0 end as forfeits_lost,
     case when m.status = 'cancelled' then 1 else 0 end as cancelled,
     case
-      when m.status = 'forfeit' and m.winner_entry_id = e.id then 4
-      when m.status in ('completed', 'score_submitted') and m.winner_entry_id = e.id then 4
+      when m.status = 'forfeit' and m.winner_entry_id = e.id then c.points_per_win
+      when m.status in ('completed', 'score_submitted') and m.winner_entry_id = e.id then c.points_per_win
       when m.status in ('completed', 'score_submitted') and m.winner_entry_id <> e.id then
-        1 + case
-          when e.id = m.entry_a_id and sc.a_sets > 0 then 1
-          when e.id = m.entry_b_id and sc.b_sets > 0 then 1
+        c.points_per_played_loss + case
+          when e.id = m.entry_a_id and sc.a_sets > 0 then c.bonus_point_per_set_won_when_lost
+          when e.id = m.entry_b_id and sc.b_sets > 0 then c.bonus_point_per_set_won_when_lost
           else 0
         end
       else 0
@@ -178,6 +182,9 @@ match_points as (
   from public.matches m
   join set_counts sc on sc.match_id = m.id
   join public.division_entries e on e.id in (m.entry_a_id, m.entry_b_id)
+  join public.divisions d on d.id = m.division_id
+  join public.tournaments t on t.id = d.tournament_id
+  join public.clubs c on c.id = t.club_id
 )
 select
   division_id,

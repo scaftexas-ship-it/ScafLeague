@@ -17,6 +17,9 @@ export type ClubRow = {
   id: string;
   name: string;
   logo_url: string | null;
+  points_per_win: number;
+  points_per_played_loss: number;
+  bonus_point_per_set_won_when_lost: number;
 };
 
 export type TournamentRow = {
@@ -26,6 +29,7 @@ export type TournamentRow = {
   sport: Sport;
   start_date: string;
   end_date: string;
+  logo_url: string | null;
 };
 
 export type DivisionRow = {
@@ -176,9 +180,30 @@ export async function claimPlayerProfileIfEligible(supabase: SupabaseClient): Pr
 }
 
 export async function getClub(supabase: SupabaseClient, clubId: string) {
-  const { data, error } = await supabase.from("clubs").select("id, name, logo_url").eq("id", clubId).maybeSingle();
+  const { data, error } = await supabase
+    .from("clubs")
+    .select("id, name, logo_url, points_per_win, points_per_played_loss, bonus_point_per_set_won_when_lost")
+    .eq("id", clubId)
+    .maybeSingle();
   if (error) fail(error, "Could not load the club.");
   return data as ClubRow | null;
+}
+
+/** Updates a club's standings scoring rules -- see add-scoring-rules.sql for how the public.standings view reads these. */
+export async function updateClubScoringRules(
+  supabase: SupabaseClient,
+  clubId: string,
+  rules: { pointsPerWin: number; pointsPerPlayedLoss: number; bonusPointPerSetWonWhenLost: number }
+) {
+  const { error } = await supabase
+    .from("clubs")
+    .update({
+      points_per_win: rules.pointsPerWin,
+      points_per_played_loss: rules.pointsPerPlayedLoss,
+      bonus_point_per_set_won_when_lost: rules.bonusPointPerSetWonWhenLost
+    })
+    .eq("id", clubId);
+  if (error) fail(error, "Could not save the scoring rules.");
 }
 
 const LOGO_BUCKET = "club-logos";
@@ -207,7 +232,7 @@ export async function uploadClubLogo(supabase: SupabaseClient, clubId: string, f
 export async function listTournaments(supabase: SupabaseClient, clubId: string) {
   const { data, error } = await supabase
     .from("tournaments")
-    .select("id, club_id, name, sport, start_date, end_date")
+    .select("id, club_id, name, sport, start_date, end_date, logo_url")
     .eq("club_id", clubId)
     .order("created_at", { ascending: false });
   if (error) fail(error, "Could not load tournaments.");
@@ -218,7 +243,7 @@ export async function listTournaments(supabase: SupabaseClient, clubId: string) 
 export async function getTournament(supabase: SupabaseClient, tournamentId: string) {
   const { data, error } = await supabase
     .from("tournaments")
-    .select("id, club_id, name, sport, start_date, end_date")
+    .select("id, club_id, name, sport, start_date, end_date, logo_url")
     .eq("id", tournamentId)
     .maybeSingle();
   if (error) fail(error, "Could not load the tournament.");
@@ -239,7 +264,7 @@ export async function createTournament(
       end_date: input.endDate,
       created_by: input.createdBy
     })
-    .select("id, club_id, name, sport, start_date, end_date")
+    .select("id, club_id, name, sport, start_date, end_date, logo_url")
     .single();
   if (error) fail(error, "Could not create the tournament.");
   return data as TournamentRow;
@@ -249,6 +274,33 @@ export async function createTournament(
 export async function deleteTournament(supabase: SupabaseClient, tournamentId: string) {
   const { error } = await supabase.from("tournaments").delete().eq("id", tournamentId);
   if (error) fail(error, "Could not delete the tournament.");
+}
+
+/**
+ * Uploads a tournament-specific logo, shown on that tournament's public
+ * leaderboard page -- for clubs running leagues for multiple different
+ * sports clubs that each want their own branding rather than the single
+ * club-wide logo. Reuses the club-logos bucket under a tournaments/{id}/
+ * path -- see add-tournament-logo.sql for why no new bucket/policy is
+ * needed.
+ */
+export async function uploadTournamentLogo(supabase: SupabaseClient, tournamentId: string, file: File) {
+  if (!file.type.startsWith("image/")) throw new Error("Choose an image file (PNG, JPG, SVG, or WebP).");
+  if (file.size > MAX_LOGO_BYTES) throw new Error("Logo must be under 2 MB.");
+
+  const extension = file.name.split(".").pop() || "png";
+  const path = `tournaments/${tournamentId}/logo.${extension}`;
+
+  const upload = await supabase.storage.from(LOGO_BUCKET).upload(path, file, { upsert: true, cacheControl: "3600" });
+  if (upload.error) fail(upload.error, "Could not upload the logo.");
+
+  const { data: publicUrlData } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path);
+  const logoUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+
+  const { error } = await supabase.from("tournaments").update({ logo_url: logoUrl }).eq("id", tournamentId);
+  if (error) fail(error, "Could not save the logo.");
+
+  return logoUrl;
 }
 
 export async function listDivisions(supabase: SupabaseClient, tournamentId: string) {

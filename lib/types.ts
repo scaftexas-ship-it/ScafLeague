@@ -93,9 +93,15 @@ export type Standing = {
   setsLost: number;
 };
 
-/** League-wide scoring constants, quoted by the UI so labels never drift from the real rules. */
-export const SCORING_RULES = {
+export type ScoringRules = {
+  pointsPerWin: number;
+  pointsPerPlayedLoss: number;
+  bonusPointPerSetWonWhenLost: number;
+};
+
+/** Default scoring rules -- a club can override these (see clubs.points_per_win etc.), so treat this as a fallback, not the source of truth. */
+export const SCORING_RULES: ScoringRules = {
   pointsPerWin: 4,
   pointsPerPlayedLoss: 1,
   bonusPointPerSetWonWhenLost: 1
-} as const;
+};

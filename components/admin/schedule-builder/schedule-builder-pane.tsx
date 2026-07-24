@@ -428,6 +428,15 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
               matches={admin.matches}
               matchSets={admin.matchSets}
               onApply={(refIds) => builder.patch(state.format === "doubles" ? { selectedTeamIds: refIds } : { selectedPlayerIds: refIds })}
+              rules={
+                admin.club
+                  ? {
+                      pointsPerWin: admin.club.points_per_win,
+                      pointsPerPlayedLoss: admin.club.points_per_played_loss,
+                      bonusPointPerSetWonWhenLost: admin.club.bonus_point_per_set_won_when_lost
+                    }
+                  : undefined
+              }
             />
           ) : null}
 

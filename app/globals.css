@@ -158,6 +158,13 @@ button {
   background: var(--color-surface);
 }
 
+.leaderboard-logo {
+  height: 64px;
+  width: 64px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+
 .nav-actions {
   display: flex;
   align-items: center;

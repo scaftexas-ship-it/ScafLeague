@@ -315,3 +315,35 @@ test("bonus points: played gets 1, winning at least one set adds 1 more, matchin
   assert.equal(cancelledById.a.points, 0);
   assert.equal(cancelledById.b.points, 0);
 });
+
+test("calculateStandings uses a club's custom scoring rules instead of the 4/1/1 default when given one", () => {
+  const pair: DivisionEntry[] = [
+    { id: "a", divisionId: "d-1", label: "A", playerIds: ["p-a"] },
+    { id: "b", divisionId: "d-1", label: "B", playerIds: ["p-b"] }
+  ];
+  // A wins 2-1 (won 2 sets, lost 1) -- with custom rules (3 for a win, 0 for
+  // a played loss, 2 bonus for winning a set while losing), B should get
+  // just the 2-point set-win bonus and nothing for merely playing.
+  const match: Match = {
+    divisionId: "d-1",
+    round: 1,
+    id: "m-1",
+    entryAId: "a",
+    entryBId: "b",
+    scheduleWeekStart: "2026-07-06",
+    scheduleWeekEnd: "2026-07-12",
+    extensionWeekStart: "2026-07-13",
+    extensionWeekEnd: "2026-07-19",
+    status: "completed",
+    sets: [
+      { setNumber: 1, entryAScore: 11, entryBScore: 5 },
+      { setNumber: 2, entryAScore: 6, entryBScore: 11 },
+      { setNumber: 3, entryAScore: 11, entryBScore: 7 }
+    ]
+  };
+
+  const standings = calculateStandings(pair, [match], { pointsPerWin: 3, pointsPerPlayedLoss: 0, bonusPointPerSetWonWhenLost: 2 });
+  const byId = Object.fromEntries(standings.map((s) => [s.entryId, s]));
+  assert.equal(byId.a.points, 3);
+  assert.equal(byId.b.points, 2);
+});

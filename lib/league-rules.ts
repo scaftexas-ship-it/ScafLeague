@@ -1,5 +1,5 @@
 import { SCORING_RULES } from "./types.ts";
-import type { DivisionEntry, Match, MatchSet, Standing } from "./types.ts";
+import type { DivisionEntry, Match, MatchSet, ScoringRules, Standing } from "./types.ts";
 
 export function addDays(date: string, days: number) {
   const next = new Date(`${date}T00:00:00.000Z`);
@@ -55,8 +55,14 @@ export function getMatchWinner(match: Pick<Match, "entryAId" | "entryBId" | "set
  * hard-coded "4 / 1 / 1" summary as static copy in the admin UI, which could
  * silently drift from this function. UI components should import
  * SCORING_RULES from lib/types instead of hard-coding numbers.
+ *
+ * `rules` defaults to SCORING_RULES but a club can override the actual
+ * values (clubs.points_per_win etc.) -- pass those through when known so
+ * this preview math (used for bracket seeding) matches what the real
+ * standings view computes. The standings view itself has its own copy of
+ * this logic in SQL, kept in sync manually -- see add-scoring-rules.sql.
  */
-export function calculateStandings(entries: DivisionEntry[], matches: Match[]): Standing[] {
+export function calculateStandings(entries: DivisionEntry[], matches: Match[], rules: ScoringRules = SCORING_RULES): Standing[] {
   const standings = new Map<string, Standing>();
   for (const entry of entries) {
     standings.set(entry.id, {
@@ -89,7 +95,7 @@ export function calculateStandings(entries: DivisionEntry[], matches: Match[]): 
       const loser = match.winnerEntryId === match.entryAId ? b : a;
       winner.wins += 1;
       winner.forfeitsWon += 1;
-      winner.points += SCORING_RULES.pointsPerWin;
+      winner.points += rules.pointsPerWin;
       loser.losses += 1;
       loser.forfeitsLost += 1;
       continue;
@@ -106,8 +112,8 @@ export function calculateStandings(entries: DivisionEntry[], matches: Match[]): 
     b.played += 1;
     winner.wins += 1;
     loser.losses += 1;
-    winner.points += SCORING_RULES.pointsPerWin;
-    loser.points += SCORING_RULES.pointsPerPlayedLoss;
+    winner.points += rules.pointsPerWin;
+    loser.points += rules.pointsPerPlayedLoss;
 
     let loserSetWins = 0;
     for (const set of match.sets) {
@@ -123,15 +129,15 @@ export function calculateStandings(entries: DivisionEntry[], matches: Match[]): 
         if (loser.entryId === match.entryBId) loserSetWins += 1;
       }
     }
-    if (loserSetWins > 0) loser.points += SCORING_RULES.bonusPointPerSetWonWhenLost;
+    if (loserSetWins > 0) loser.points += rules.bonusPointPerSetWonWhenLost;
   }
 
   return Array.from(standings.values()).sort((a, b) => b.points - a.points || b.wins - a.wins || b.setsWon - a.setsWon);
 }
 
 /** Reorders entries best-to-worst by current standings, for seeding a playoff bracket off group results (top-4 to semifinals, top-N from two divisions combined into cross-group quarterfinals, etc). Entries with no standings row yet (haven't played) sort last, in their original order. */
-export function rankEntriesByStandings(entries: DivisionEntry[], matches: Match[]): DivisionEntry[] {
-  const standings = calculateStandings(entries, matches);
+export function rankEntriesByStandings(entries: DivisionEntry[], matches: Match[], rules: ScoringRules = SCORING_RULES): DivisionEntry[] {
+  const standings = calculateStandings(entries, matches, rules);
   const rank = new Map(standings.map((standing, index) => [standing.entryId, index]));
   return [...entries].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
 }

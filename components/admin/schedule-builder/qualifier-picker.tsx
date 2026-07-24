@@ -5,7 +5,8 @@ import { X } from "lucide-react";
 import { rankEntriesByStandings } from "@/lib/league-rules";
 import { toDomainMatch } from "@/lib/match-scoring";
 import type { DivisionEntryRow, DivisionRow, MatchRow, MatchSetRow } from "@/lib/admin-data";
-import type { DivisionFormat } from "@/lib/types";
+import { SCORING_RULES } from "@/lib/types";
+import type { DivisionFormat, ScoringRules } from "@/lib/types";
 
 type Qualifier = {
   entryId: string;
@@ -17,14 +18,14 @@ type Qualifier = {
 };
 
 /** Ranks a division's entries best-to-worst using its actual match results. */
-function rankedEntriesForDivision(divisionId: string, divisionEntries: DivisionEntryRow[], matches: MatchRow[], matchSets: MatchSetRow[]) {
+function rankedEntriesForDivision(divisionId: string, divisionEntries: DivisionEntryRow[], matches: MatchRow[], matchSets: MatchSetRow[], rules: ScoringRules) {
   const entries = divisionEntries
     .filter((entry) => entry.division_id === divisionId)
     .map((entry) => ({ id: entry.id, divisionId: entry.division_id, label: entry.label, playerIds: [] as string[] }));
   const domainMatches = matches
     .filter((match) => match.division_id === divisionId)
     .map((match) => toDomainMatch(match, matchSets.filter((set) => set.match_id === match.id).map((set) => ({ setNumber: set.set_number, entryAScore: set.entry_a_score, entryBScore: set.entry_b_score }))));
-  return rankEntriesByStandings(entries, domainMatches);
+  return rankEntriesByStandings(entries, domainMatches, rules);
 }
 
 /**
@@ -45,7 +46,8 @@ export function QualifierPicker({
   matchSets,
   format,
   excludeDivisionId,
-  onApply
+  onApply,
+  rules = SCORING_RULES
 }: {
   divisions: DivisionRow[];
   divisionEntries: DivisionEntryRow[];
@@ -54,6 +56,7 @@ export function QualifierPicker({
   format: DivisionFormat;
   excludeDivisionId: string;
   onApply: (refIdsInSeedOrder: string[]) => void;
+  rules?: ScoringRules;
 }) {
   const [sourceDivisionIds, setSourceDivisionIds] = useState<string[]>([]);
   const [topN, setTopN] = useState("4");
@@ -76,7 +79,7 @@ export function QualifierPicker({
     const next: Qualifier[] = [];
     for (const divisionId of sourceDivisionIds) {
       const division = divisions.find((item) => item.id === divisionId);
-      const ranked = rankedEntriesForDivision(divisionId, divisionEntries, matches, matchSets);
+      const ranked = rankedEntriesForDivision(divisionId, divisionEntries, matches, matchSets, rules);
       ranked.slice(0, n).forEach((entry, index) => {
         const refId = refIdFor(entry.id);
         if (!refId) return;
@@ -88,7 +91,7 @@ export function QualifierPicker({
   }
 
   function removeAndPromoteNext(target: Qualifier) {
-    const ranked = rankedEntriesForDivision(target.divisionId, divisionEntries, matches, matchSets);
+    const ranked = rankedEntriesForDivision(target.divisionId, divisionEntries, matches, matchSets, rules);
     const stillInFromSameDivision = new Set(
       qualifiers.filter((qualifier) => qualifier.divisionId === target.divisionId && qualifier.entryId !== target.entryId).map((qualifier) => qualifier.entryId)
     );
