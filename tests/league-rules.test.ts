@@ -63,6 +63,26 @@ test("schedules round robin rounds every week", () => {
   assert.deepEqual(roundStarts, ["2026-07-06", "2026-07-13", "2026-07-20"]);
 });
 
+test("compresses round robin round spacing to fit a short tournament instead of dropping rounds", () => {
+  // A single-day (or near-single-day) tournament -- e.g. a volleyball pool
+  // play event -- has no room for weekly-spaced rounds. All 3 rounds for 4
+  // entries (6 matches total) must still be generated, not just whichever
+  // round fits before a fixed 7-day cadence runs past endDate.
+  const matches = generateRoundRobinSchedule({
+    divisionId: "d-1",
+    entries,
+    startDate: "2026-07-24",
+    endDate: "2026-07-25"
+  });
+
+  assert.equal(matches.length, 6);
+  assert.equal(new Set(matches.map((match) => [match.entryAId, match.entryBId].sort().join(":"))).size, 6);
+  assert.equal(new Set(matches.map((match) => match.round)).size, 3);
+  for (const match of matches) {
+    assert.equal(match.scheduleWeekStart, "2026-07-24");
+  }
+});
+
 test("generates quarterfinal eliminator matches for eight entries", () => {
   const matches = generateEliminatorSchedule({
     divisionId: "d-1",

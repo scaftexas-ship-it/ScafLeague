@@ -158,14 +158,23 @@ export function generateRoundRobinSchedule(params: {
   const rotating = competitors.slice(1);
   const matches: Match[] = [];
 
+  // Rounds are normally spaced a week apart, matching this app's weekly
+  // league format. A short tournament (a single day or weekend event, e.g.
+  // volleyball pool play) doesn't have room for that -- compress the
+  // spacing so every round still lands within [startDate, endDate] instead
+  // of silently dropping whichever rounds would have fallen past endDate at
+  // a fixed 7-day cadence.
+  const totalSpanDays = Math.round(
+    (new Date(`${params.endDate}T00:00:00.000Z`).getTime() - new Date(`${params.startDate}T00:00:00.000Z`).getTime()) / (24 * 60 * 60 * 1000)
+  );
+  const spacingDays = rounds <= 1 ? 0 : Math.max(0, Math.min(7, Math.floor(totalSpanDays / (rounds - 1))));
+
   for (let round = 0; round < rounds; round += 1) {
     const current = [competitors[0], ...rotating];
-    const scheduleWeekStart = addDays(params.startDate, round * 7);
+    const scheduleWeekStart = addDays(params.startDate, round * spacingDays);
     const scheduleWeekEnd = addDays(scheduleWeekStart, 6);
     const extensionWeekStart = addDays(scheduleWeekStart, 7);
     const extensionWeekEnd = addDays(scheduleWeekStart, 13);
-
-    if (new Date(`${scheduleWeekStart}T00:00:00.000Z`).getTime() > new Date(`${params.endDate}T00:00:00.000Z`).getTime()) break;
 
     for (let index = 0; index < half; index += 1) {
       const left = current[index];
