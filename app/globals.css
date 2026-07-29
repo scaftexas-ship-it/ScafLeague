@@ -143,8 +143,8 @@ button {
 }
 
 .brand-logo {
-  height: 24px;
-  width: 24px;
+  height: 32px;
+  width: 32px;
   object-fit: contain;
   border-radius: var(--radius-sm);
 }
@@ -531,6 +531,24 @@ button {
 .field select:disabled {
   background: var(--color-surface-muted);
   color: var(--color-text-faint);
+}
+
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-icon svg {
+  position: absolute;
+  left: 12px;
+  color: var(--color-text-faint);
+  pointer-events: none;
+}
+
+.input-with-icon input {
+  width: 100%;
+  padding-left: 36px;
 }
 
 .password-field {

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardX } from "lucide-react";
-import { replaceMatchSets, updateMatch } from "@/lib/admin-data";
+import { ClipboardX, Pencil } from "lucide-react";
+import { deleteDivision, renameDivision, replaceMatchSets, updateMatch } from "@/lib/admin-data";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "./use-admin-data";
 import { MatchEditor } from "./match-editor";
@@ -11,10 +13,17 @@ import type { MatchEditPatch } from "./match-editor";
 import type { MatchRow } from "@/lib/admin-data";
 import { RosterPane } from "./roster-pane";
 
+type MatchesTab = "roster" | "matches";
+
 export function MatchManagementPane({ admin }: { admin: AdminData }) {
+  const [activeTab, setActiveTab] = useState<MatchesTab>("matches");
   const [savingMatchId, setSavingMatchId] = useState("");
   const [message, setMessage] = useState("");
   const [divisionFilter, setDivisionFilter] = useState("all");
+  const [renamingDivision, setRenamingDivision] = useState(false);
+  const [divisionNameDraft, setDivisionNameDraft] = useState("");
+  const [savingDivisionName, setSavingDivisionName] = useState(false);
+  const [deletingDivision, setDeletingDivision] = useState(false);
 
   async function saveMatch(match: MatchRow, sets: Array<{ setNumber: number; entryAScore: number; entryBScore: number }>, patch: MatchEditPatch) {
     if (!admin.supabase) return;
@@ -35,15 +44,71 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
     divisionFilter === "all" ? admin.matches : admin.matches.filter((match) => match.division_id === divisionFilter);
   const sortedMatches = [...filteredMatches].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round);
   const sport = admin.tournaments.find((tournament) => tournament.id === admin.selectedTournamentId)?.sport || "pickleball";
+  const selectedDivision = admin.divisions.find((division) => division.id === divisionFilter);
 
   function handleTournamentFilterChange(tournamentId: string) {
     admin.setSelectedTournamentId(tournamentId);
     setDivisionFilter("all");
+    setRenamingDivision(false);
+  }
+
+  function handleDivisionFilterChange(divisionId: string) {
+    setDivisionFilter(divisionId);
+    setRenamingDivision(false);
+    setMessage("");
+  }
+
+  function startRenameDivision() {
+    if (!selectedDivision) return;
+    setDivisionNameDraft(selectedDivision.name);
+    setRenamingDivision(true);
+  }
+
+  async function saveDivisionName() {
+    if (!admin.supabase || !selectedDivision || !divisionNameDraft.trim()) return;
+    setSavingDivisionName(true);
+    try {
+      await renameDivision(admin.supabase, selectedDivision.id, divisionNameDraft.trim());
+      await admin.reloadDivisions();
+      setRenamingDivision(false);
+      setMessage("Division renamed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not rename the division.");
+    } finally {
+      setSavingDivisionName(false);
+    }
+  }
+
+  async function removeDivision() {
+    if (!admin.supabase || !selectedDivision) return;
+    setDeletingDivision(true);
+    try {
+      await deleteDivision(admin.supabase, selectedDivision.id);
+      await admin.reloadDivisions();
+      setDivisionFilter("all");
+      setMessage("Division deleted.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not delete the division.");
+    } finally {
+      setDeletingDivision(false);
+    }
   }
 
   return (
     <div className="stack">
-      <RosterPane admin={admin} />
+      <SegmentedControl
+        ariaLabel="Matches section"
+        onChange={setActiveTab}
+        options={[
+          { value: "roster", label: "Roster" },
+          { value: "matches", label: "Match Management" }
+        ]}
+        value={activeTab}
+      />
+
+      {activeTab === "roster" ? <RosterPane admin={admin} /> : null}
+
+      {activeTab === "matches" ? (
       <div className="card stack">
         <div className="section-title">
           <h2>Match Management</h2>
@@ -62,7 +127,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
             </label>
             <label className="field">
               <span>Division</span>
-              <select onChange={(event) => setDivisionFilter(event.target.value)} value={divisionFilter}>
+              <select onChange={(event) => handleDivisionFilterChange(event.target.value)} value={divisionFilter}>
                 <option value="all">All divisions</option>
                 {admin.divisions.map((division) => (
                   <option key={division.id} value={division.id}>
@@ -73,6 +138,41 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
             </label>
           </div>
         ) : null}
+
+        {selectedDivision ? (
+          <div className="spread">
+            {renamingDivision ? (
+              <div className="field-row">
+                <label className="field">
+                  <span className="visually-hidden">Division name</span>
+                  <input onChange={(event) => setDivisionNameDraft(event.target.value)} value={divisionNameDraft} />
+                </label>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-2)" }}>
+                  <button className="button small" disabled={savingDivisionName || !divisionNameDraft.trim()} onClick={saveDivisionName} type="button">
+                    {savingDivisionName ? "Saving..." : "Save"}
+                  </button>
+                  <button className="button secondary small" disabled={savingDivisionName} onClick={() => setRenamingDivision(false)} type="button">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="toolbar">
+                <button className="button secondary small" onClick={startRenameDivision} type="button">
+                  <Pencil size={14} aria-hidden />
+                  Rename division
+                </button>
+                <ConfirmButton
+                  confirmLabel={`Delete "${selectedDivision.name}"?`}
+                  disabled={deletingDivision}
+                  key={selectedDivision.id}
+                  onConfirm={removeDivision}
+                />
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <StatusBanner message={message} />
         {sortedMatches.length > 0 ? (
           <div className="match-list">
@@ -102,6 +202,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
           <EmptyState icon={<ClipboardX size={24} aria-hidden />} title="No matches yet" body="Generate a schedule from the Tournaments tab first." />
         )}
       </div>
+      ) : null}
     </div>
   );
 }

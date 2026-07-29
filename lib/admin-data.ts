@@ -344,6 +344,11 @@ export async function deleteDivision(supabase: SupabaseClient, divisionId: strin
   if (error) fail(error, "Could not delete the division.");
 }
 
+export async function renameDivision(supabase: SupabaseClient, divisionId: string, name: string) {
+  const { error } = await supabase.from("divisions").update({ name }).eq("id", divisionId);
+  if (error) fail(error, "Could not rename the division.");
+}
+
 export async function listPlayers(supabase: SupabaseClient, clubId: string) {
   const { data, error } = await supabase
     .from("player_profiles")

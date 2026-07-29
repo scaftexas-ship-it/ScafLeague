@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Ban, CheckCircle2, Pencil, Users } from "lucide-react";
+import { Ban, CheckCircle2, Pencil, Search, Users } from "lucide-react";
 import { addPlayer, deletePlayer, isPlayerInUse, linkUserToPlayer, toggleUserAccess, updatePlayer, updateUserRole } from "@/lib/admin-data";
 import type { PlayerProfileRow } from "@/lib/admin-data";
 import { isServiceRoleMissingError, parsePeopleImportFile, PeopleImportError } from "@/lib/people-import";
@@ -9,10 +9,19 @@ import { combineName, splitName } from "@/lib/format";
 import type { UserRole } from "@/lib/types";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "./use-admin-data";
 
 type PlayerProfileMode = "__new" | "" | string;
+type PeopleTab = "add" | "upload" | "access" | "players";
+
+const PEOPLE_TABS: Array<{ value: PeopleTab; label: string }> = [
+  { value: "add", label: "Add User And Player" },
+  { value: "upload", label: "Upload People" },
+  { value: "access", label: "User Access" },
+  { value: "players", label: "Players" }
+];
 
 const EMPTY_INVITE_FORM = {
   firstName: "",
@@ -29,6 +38,10 @@ const EMPTY_INVITE_FORM = {
 const EMPTY_EDIT_FORM = { firstName: "", lastName: "", email: "", mobileNumber: "", rating: "", duprRating: "" };
 
 export function PeoplePane({ admin }: { admin: AdminData }) {
+  const [activeTab, setActiveTab] = useState<PeopleTab>("add");
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [deletingUserId, setDeletingUserId] = useState("");
+
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
   const [inviting, setInviting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState("");
@@ -321,6 +334,44 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
     }
   }
 
+  async function deleteUserLogin(userId: string) {
+    if (!admin.supabase) return;
+    if (userId === admin.adminUser?.id) {
+      setAccessMessage("You can't delete your own login.");
+      return;
+    }
+    if (admin.serviceRoleConfigured === false) {
+      setAccessMessage("Deleting logins requires SUPABASE_SERVICE_ROLE_KEY, which isn't configured on this deployment.");
+      return;
+    }
+    setDeletingUserId(userId);
+    setAccessMessage("");
+    try {
+      const { data: sessionData } = await admin.supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setAccessMessage("Your session expired. Sign in again.");
+        return;
+      }
+      const response = await fetch("/api/admin/users/delete/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId })
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({ error: "" }));
+        setAccessMessage(result.error || "Could not delete the login.");
+        return;
+      }
+      await Promise.all([admin.reloadAppUsers(), admin.reloadPlayers()]);
+      setAccessMessage("Login deleted. Any linked player profile was kept and unlinked, not deleted.");
+    } catch (error) {
+      setAccessMessage(error instanceof Error ? error.message : "Could not delete the login.");
+    } finally {
+      setDeletingUserId("");
+    }
+  }
+
   async function removePlayer(playerId: string) {
     if (!admin.supabase) return;
     setPlayersMessage("");
@@ -378,10 +429,21 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
   }
 
   const playerLoginUsers = admin.appUsers.filter((user) => user.role === "player");
+  const filteredPlayers = admin.players.filter((player) => {
+    const query = playerSearch.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      player.display_name.toLowerCase().includes(query) ||
+      (player.email || "").toLowerCase().includes(query) ||
+      (player.mobile_number || "").toLowerCase().includes(query)
+    );
+  });
 
   return (
     <div className="stack">
-      <div className="grid two">
+      <SegmentedControl ariaLabel="People section" onChange={setActiveTab} options={PEOPLE_TABS} value={activeTab} />
+
+      {activeTab === "add" ? (
         <div className="card stack">
           <div className="section-title">
             <h2>Add User And Player</h2>
@@ -466,7 +528,9 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             <p className="subtle">Leave password blank to send an email invite. Creating logins requires SUPABASE_SERVICE_ROLE_KEY in .env.local.</p>
           </div>
         </div>
+      ) : null}
 
+      {activeTab === "upload" ? (
         <div className="card stack">
           <div className="section-title">
             <h2>Upload People</h2>
@@ -554,8 +618,9 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             </button>
           </div>
         </div>
-      </div>
+      ) : null}
 
+      {activeTab === "access" ? (
       <div className="card">
         <div className="section-title">
           <h2>User Access</h2>
@@ -571,6 +636,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                   <th>Linked player</th>
                   <th>Role</th>
                   <th>Access</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -607,6 +673,16 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                           {user.access_disabled ? "Enable" : "Disable"}
                         </button>
                       </td>
+                      <td>
+                        {user.id === admin.adminUser?.id ? null : (
+                          <ConfirmButton
+                            confirmLabel="Delete login?"
+                            disabled={deletingUserId === user.id}
+                            key={user.id}
+                            onConfirm={() => deleteUserLogin(user.id)}
+                          />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -617,13 +693,23 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           <EmptyState icon={<Ban size={24} aria-hidden />} title="No app users" body="Invite your first user above." />
         )}
       </div>
+      ) : null}
 
+      {activeTab === "players" ? (
       <div className="card">
         <div className="section-title">
           <h2>Players</h2>
         </div>
+        <label className="field">
+          <span className="visually-hidden">Search players</span>
+          <div className="input-with-icon">
+            <Search size={16} aria-hidden />
+            <input onChange={(event) => setPlayerSearch(event.target.value)} placeholder="Search players by name, email, or mobile" value={playerSearch} />
+          </div>
+        </label>
         <StatusBanner message={playersMessage} />
         {admin.players.length > 0 ? (
+          filteredPlayers.length > 0 ? (
           <div className="data-table-wrap">
             <table className="data-table">
               <thead>
@@ -638,7 +724,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                 </tr>
               </thead>
               <tbody>
-                {admin.players.map((player) => {
+                {filteredPlayers.map((player) => {
                   const linkedUser = admin.appUsers.find((user) => user.id === player.user_id);
                   if (editingPlayerId === player.id) {
                     return (
@@ -729,10 +815,14 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
               </tbody>
             </table>
           </div>
+          ) : (
+            <EmptyState icon={<Search size={24} aria-hidden />} title="No players match your search" body="Try a different name, email, or mobile number." />
+          )
         ) : (
           <EmptyState icon={<Users size={24} aria-hidden />} title="No players yet" body="Add one above, or import a file." />
         )}
       </div>
+      ) : null}
     </div>
   );
 }
