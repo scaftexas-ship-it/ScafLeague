@@ -227,6 +227,50 @@ as $$
   );
 $$;
 
+/**
+ * Deletes a login (auth user) on an admin's behalf. This app is a static
+ * export with no server runtime to hold a service_role key, so the privileged
+ * work lives here instead -- SECURITY DEFINER bypasses RLS, hence the explicit
+ * admin / same-club / not-yourself checks below.
+ */
+create function public.delete_user_login(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  caller_club_id uuid;
+  target_club_id uuid;
+begin
+  if not public.is_admin() then
+    raise exception 'Only enabled admins can delete logins.';
+  end if;
+
+  if target_user_id = auth.uid() then
+    raise exception 'You cannot delete your own login.';
+  end if;
+
+  select club_id into caller_club_id from public.users where id = auth.uid();
+  select club_id into target_club_id from public.users where id = target_user_id;
+
+  if target_club_id is null or target_club_id is distinct from caller_club_id then
+    raise exception 'That user was not found in your club.';
+  end if;
+
+  -- Unlink the player profile first: player_profiles.user_id and public.users.id
+  -- both cascade on delete, so deleting the auth user directly would wipe the
+  -- profile, its division entries, and every match those entries appear in.
+  update public.player_profiles set user_id = null where user_id = target_user_id;
+
+  delete from auth.users where id = target_user_id;
+end;
+$$;
+
+revoke all on function public.delete_user_login(uuid) from public;
+revoke all on function public.delete_user_login(uuid) from anon;
+grant execute on function public.delete_user_login(uuid) to authenticated;
+
 alter table public.clubs enable row level security;
 alter table public.users enable row level security;
 alter table public.player_profiles enable row level security;

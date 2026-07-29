@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Ban, CheckCircle2, Pencil, Search, Users } from "lucide-react";
-import { addPlayer, deletePlayer, isPlayerInUse, linkUserToPlayer, toggleUserAccess, updatePlayer, updateUserRole } from "@/lib/admin-data";
+import { addPlayer, deletePlayer, deleteUserLogin as deleteUserLoginRpc, isPlayerInUse, linkUserToPlayer, toggleUserAccess, updatePlayer, updateUserRole } from "@/lib/admin-data";
 import type { PlayerProfileRow } from "@/lib/admin-data";
 import { isServiceRoleMissingError, parsePeopleImportFile, PeopleImportError } from "@/lib/people-import";
 import { combineName, splitName } from "@/lib/format";
@@ -340,29 +340,10 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       setAccessMessage("You can't delete your own login.");
       return;
     }
-    if (admin.serviceRoleConfigured === false) {
-      setAccessMessage("Deleting logins requires SUPABASE_SERVICE_ROLE_KEY, which isn't configured on this deployment.");
-      return;
-    }
     setDeletingUserId(userId);
     setAccessMessage("");
     try {
-      const { data: sessionData } = await admin.supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        setAccessMessage("Your session expired. Sign in again.");
-        return;
-      }
-      const response = await fetch("/api/admin/users/delete/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId })
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({ error: "" }));
-        setAccessMessage(result.error || "Could not delete the login.");
-        return;
-      }
+      await deleteUserLoginRpc(admin.supabase, userId);
       await Promise.all([admin.reloadAppUsers(), admin.reloadPlayers()]);
       setAccessMessage("Login deleted. Any linked player profile was kept and unlinked, not deleted.");
     } catch (error) {

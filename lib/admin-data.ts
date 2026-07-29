@@ -417,6 +417,19 @@ export async function deletePlayer(supabase: SupabaseClient, playerId: string) {
   if (error) fail(error, "Could not delete the player.");
 }
 
+/**
+ * Deletes a login (auth user), leaving any linked player profile in place but
+ * unlinked. Goes through the delete_user_login Postgres function rather than a
+ * server route: this app is a static export with no runtime to hold a
+ * service_role key (POST handlers 405 in production), so the privileged work
+ * lives in the database. It enforces admin-only, same-club, and
+ * not-your-own-login itself -- see supabase/add-delete-user-login.sql.
+ */
+export async function deleteUserLogin(supabase: SupabaseClient, userId: string) {
+  const { error } = await supabase.rpc("delete_user_login", { target_user_id: userId });
+  if (error) fail(error, "Could not delete the login.");
+}
+
 export async function listAppUsers(supabase: SupabaseClient, clubId: string) {
   const { data, error } = await supabase
     .from("users")
