@@ -83,19 +83,31 @@ export function SettingsPane({ admin }: { admin: AdminData }) {
 
       <div className="card stack">
         <div className="section-title">
-          <h2>Import Setup</h2>
+          <h2>How Logins Work</h2>
         </div>
         {admin.serviceRoleConfigured === null ? (
-          <p className="subtle">Checking whether bulk login creation is enabled...</p>
+          <p className="subtle">Checking how logins are created on this deployment...</p>
         ) : admin.serviceRoleConfigured ? (
-          <p className="status-banner" data-tone="success">
-            SUPABASE_SERVICE_ROLE_KEY is configured. Invited users and bulk imports can create real logins.
-          </p>
+          <>
+            <p className="status-banner" data-tone="success">
+              This deployment can create logins directly.
+            </p>
+            <p className="subtle">
+              Adding someone under People creates their login straight away -- set a temporary password, or leave it blank to email them an
+              invite.
+            </p>
+          </>
         ) : (
-          <p className="status-banner" data-tone="error">
-            Add SUPABASE_SERVICE_ROLE_KEY to your deployment's environment variables to let the People tab create logins. Until then,
-            invites and imports will only create player profiles.
-          </p>
+          <>
+            <p className="status-banner" data-tone="success">
+              People create their own logins on this deployment.
+            </p>
+            <p className="subtle">
+              Add someone under People with their email address, then have them open the site and choose &ldquo;New here? Create an
+              account&rdquo; using that same email. Their player profile links automatically and they pick their own password. Only emails you
+              have already added can get in, so this stays invite-only.
+            </p>
+          </>
         )}
       </div>
     </div>

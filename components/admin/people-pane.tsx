@@ -84,7 +84,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       if (admin.serviceRoleConfigured === false) {
         if (!createPlayerProfile) {
           setInviteMessage(
-            "Creating logins requires SUPABASE_SERVICE_ROLE_KEY, which isn't configured on this deployment. Add a player profile only, or have them sign up and use Link Existing Login below."
+            "On this setup people create their own logins. Choose \"Create new player profile\" and save them with their email -- they sign up with that same email and get linked automatically. To add an admin, have them sign up as a player first, then change their role under User Access."
           );
           return;
         }
@@ -98,7 +98,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
         });
         await admin.reloadPlayers();
         setInviteForm(EMPTY_INVITE_FORM);
-        setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
+        setInviteMessage("Player added. Ask them to sign up at the login page with this same email -- their account links to this profile automatically, and they pick their own password.");
         return;
       }
 
@@ -138,7 +138,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           });
           await admin.reloadPlayers();
           setInviteForm(EMPTY_INVITE_FORM);
-          setInviteMessage("Player profile created with their email saved, so they can activate it themselves by signing up with that email. Login skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured.");
+          setInviteMessage("Player added. Ask them to sign up at the login page with this same email -- their account links to this profile automatically, and they pick their own password.");
           return;
         }
         setInviteMessage(result.error || "Could not invite the user.");
@@ -205,7 +205,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             failures.push({
               rowNumber: row.rowNumber,
               email: row.email,
-              reason: "Logins require SUPABASE_SERVICE_ROLE_KEY, which isn't configured on this deployment."
+              reason: "Only player rows that create a profile can be imported here. Set role to player and create_player_profile to true, then this person signs up with their email to get a login."
             });
           }
         }
@@ -266,7 +266,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
       const totalRows = parsedRows.length + skipped.length;
       if (profilesOnly > 0) {
         setImportMessage(
-          `${imported + profilesOnly} of ${totalRows} imported. ${profilesOnly} were player profiles only (logins skipped: SUPABASE_SERVICE_ROLE_KEY isn't configured).${failures.length > 0 ? ` ${failures.length} failed -- see details below.` : ""}`
+          `${imported + profilesOnly} of ${totalRows} imported. ${profilesOnly} added as player profiles -- each person signs up with their own email to activate a login.${failures.length > 0 ? ` ${failures.length} failed -- see details below.` : ""}`
         );
       } else if (failures.length > 0) {
         setImportMessage(`${imported} of ${totalRows} imported. ${failures.length} failed -- see details below.`);
@@ -409,6 +409,11 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
     }
   }
 
+  // No service-role key on this deployment (the static-export default), so the
+  // app can't mint logins directly -- people activate their own by signing up
+  // with the email on their player profile. Drives the copy and the controls
+  // below so the form describes what will actually happen.
+  const selfSignupOnly = admin.serviceRoleConfigured === false;
   const playerLoginUsers = admin.appUsers.filter((user) => user.role === "player");
   const filteredPlayers = admin.players.filter((player) => {
     const query = playerSearch.trim().toLowerCase();
@@ -453,15 +458,17 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                 value={inviteForm.mobileNumber}
               />
             </label>
-            <label className="field">
-              <span>Temporary password</span>
-              <input
-                minLength={6}
-                onChange={(event) => setInviteForm((current) => ({ ...current, password: event.target.value }))}
-                type="password"
-                value={inviteForm.password}
-              />
-            </label>
+            {selfSignupOnly ? null : (
+              <label className="field">
+                <span>Temporary password</span>
+                <input
+                  minLength={6}
+                  onChange={(event) => setInviteForm((current) => ({ ...current, password: event.target.value }))}
+                  type="password"
+                  value={inviteForm.password}
+                />
+              </label>
+            )}
             <label className="field">
               <span>Role</span>
               <select onChange={(event) => setInviteForm((current) => ({ ...current, role: event.target.value as UserRole }))} value={inviteForm.role}>
@@ -504,9 +511,13 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
             </label>
             <StatusBanner message={inviteMessage} />
             <button className="button" disabled={inviting} onClick={inviteUser} type="button">
-              {inviting ? "Saving..." : inviteForm.password ? "Create login" : "Send invite"}
+              {inviting ? "Saving..." : selfSignupOnly ? "Add player" : inviteForm.password ? "Create login" : "Send invite"}
             </button>
-            <p className="subtle">Leave password blank to send an email invite. Creating logins requires SUPABASE_SERVICE_ROLE_KEY in .env.local.</p>
+            <p className="subtle">
+              {selfSignupOnly
+                ? "Save the player with their email, then they sign up at the login page with that same email -- their profile links automatically and they choose their own password."
+                : "Leave password blank to send an email invite."}
+            </p>
           </div>
         </div>
       ) : null}
@@ -539,8 +550,10 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           </label>
           <p className="subtle">
             Upload CSV, TSV, XLS, or XLSX with columns: first_name, last_name, email, mobile_number, role, password, rating, dupr,
-            create_player_profile (a single full_name column also still works). DUPR is optional and only meaningful for pickleball players. Without
-            SUPABASE_SERVICE_ROLE_KEY, player profiles import but login accounts are skipped.
+            create_player_profile (a single full_name column also still works). DUPR is optional and only meaningful for pickleball players.
+            {selfSignupOnly
+              ? " Rows import as player profiles -- each person then signs up with their own email to activate a login, so the password column is ignored."
+              : ""}
           </p>
           <StatusBanner message={importMessage} />
           {importFailures.length > 0 ? (
