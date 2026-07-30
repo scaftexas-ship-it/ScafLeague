@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ClipboardList, Flag, Send } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import {
+  claimPlayerProfileIfEligible,
   getCurrentAppUser,
   insertForfeitClaim,
   listDivisionEntries,
@@ -72,6 +73,12 @@ export function PlayerWorkspace() {
         router.replace("/login");
         return;
       }
+
+      // Link a matching player profile if it isn't linked yet. Sign-in also does
+      // this, but someone already holding a session would never pass through it
+      // again -- and without the link is_entry_member() is false, so this page
+      // would keep showing an empty schedule. No-op once linked.
+      await claimPlayerProfileIfEligible(supabase);
 
       const loadedTournaments = await listTournaments(supabase, appUser.club_id);
       if (loadedTournaments.length === 0) {

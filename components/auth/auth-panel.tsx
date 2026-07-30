@@ -106,9 +106,16 @@ export function AuthPanel() {
       error: { message?: string } | null;
     };
 
-    // No public.users row yet -- try auto-claiming a player profile an admin
-    // already added under this same email before giving up.
-    const data = !error && !initial ? await claimPlayerProfileIfEligible(supabase) : initial;
+    // Always attempt the claim, not just when the users row is missing. It's
+    // idempotent -- a no-op when the profile is already linked or no profile
+    // matches this email -- and it's the only thing that sets
+    // player_profiles.user_id. Claiming only when the users row was absent left
+    // anyone whose users row came first (the admin invite flow creates it before
+    // the profile is claimed) unlinked forever, and an unlinked profile makes
+    // is_entry_member() false: they sign in fine but land on an empty schedule
+    // and can't post their own scores.
+    const claimed = error ? null : await claimPlayerProfileIfEligible(supabase);
+    const data = initial ?? claimed;
 
     if (error || !data) {
       await supabase.auth.signOut();
