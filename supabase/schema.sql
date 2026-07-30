@@ -271,6 +271,39 @@ revoke all on function public.delete_user_login(uuid) from public;
 revoke all on function public.delete_user_login(uuid) from anon;
 grant execute on function public.delete_user_login(uuid) to authenticated;
 
+/**
+ * Cancels matches nobody played by the end of their extension week. Mirrors
+ * expireUnplayedMatches() in lib/league-rules.ts exactly -- the app also runs
+ * this rule client-side on page load, so the two must agree, including using the
+ * UTC date (the app derives "today" from toISOString()).
+ *
+ * Scheduling is separate: run supabase/add-scheduled-match-expiry.sql to enable
+ * pg_cron and register the nightly job. Without that this function simply never
+ * fires on its own, and expiry stays page-load-only.
+ */
+create function public.cancel_expired_matches()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cancelled_count integer;
+begin
+  update public.matches
+     set status = 'cancelled'
+   where status in ('scheduled', 'score_submitted')
+     and extension_week_end < (now() at time zone 'utc')::date;
+
+  get diagnostics cancelled_count = row_count;
+  return cancelled_count;
+end;
+$$;
+
+revoke all on function public.cancel_expired_matches() from public;
+revoke all on function public.cancel_expired_matches() from anon;
+revoke all on function public.cancel_expired_matches() from authenticated;
+
 alter table public.clubs enable row level security;
 alter table public.users enable row level security;
 alter table public.player_profiles enable row level security;
