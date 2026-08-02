@@ -276,6 +276,22 @@ export async function deleteTournament(supabase: SupabaseClient, tournamentId: s
   if (error) fail(error, "Could not delete the tournament.");
 }
 
+/** Edits an existing tournament in place. Note this does not move matches that were already generated -- their week dates are stored per match, so rescheduling those is a separate step. */
+export async function updateTournament(
+  supabase: SupabaseClient,
+  tournamentId: string,
+  patch: { name: string; sport: Sport; startDate: string; endDate: string }
+) {
+  const { data, error } = await supabase
+    .from("tournaments")
+    .update({ name: patch.name, sport: patch.sport, start_date: patch.startDate, end_date: patch.endDate })
+    .eq("id", tournamentId)
+    .select("id, club_id, name, sport, start_date, end_date, logo_url")
+    .single();
+  if (error) fail(error, "Could not update the tournament.");
+  return data as TournamentRow;
+}
+
 /**
  * Uploads a tournament-specific logo, shown on that tournament's public
  * leaderboard page -- for clubs running leagues for multiple different

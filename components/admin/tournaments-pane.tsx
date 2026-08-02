@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link2 } from "lucide-react";
-import { createTournament, deleteTournament, updateClubScoringRules, uploadTournamentLogo } from "@/lib/admin-data";
+import { createTournament, deleteTournament, updateClubScoringRules, updateTournament, uploadTournamentLogo } from "@/lib/admin-data";
 import { SCORING_RULES } from "@/lib/types";
 import type { Sport } from "@/lib/types";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -21,6 +21,35 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
   const [logoMessage, setLogoMessage] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
   const selectedTournament = admin.tournaments.find((tournament) => tournament.id === admin.selectedTournamentId);
+
+  // The form used to only ever create. Selecting a tournament and changing its
+  // dates silently did nothing, because save() always called createTournament
+  // and the fields never loaded the selected tournament's values. Now the form
+  // edits whatever is selected, and creating is an explicit mode.
+  const [creatingNew, setCreatingNew] = useState(false);
+
+  useEffect(() => {
+    if (creatingNew || !selectedTournament) return;
+    setForm({
+      name: selectedTournament.name,
+      sport: selectedTournament.sport,
+      startDate: selectedTournament.start_date,
+      endDate: selectedTournament.end_date
+    });
+    setMessage("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin.selectedTournamentId, creatingNew]);
+
+  function startNewTournament() {
+    setCreatingNew(true);
+    setForm({ name: "", sport: "pickleball", startDate: today, endDate: today });
+    setMessage("");
+  }
+
+  function cancelNewTournament() {
+    setCreatingNew(false);
+    setMessage("");
+  }
 
   const [scoringForm, setScoringForm] = useState({
     pointsPerWin: String(SCORING_RULES.pointsPerWin),
@@ -86,8 +115,27 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
       return;
     }
 
+    if (form.endDate < form.startDate) {
+      setMessage("The end date can't be before the start date.");
+      return;
+    }
+
+    const editingExisting = !creatingNew && Boolean(admin.selectedTournamentId);
+
     setSaving(true);
     try {
+      if (editingExisting) {
+        await updateTournament(admin.supabase, admin.selectedTournamentId, {
+          name: form.name.trim(),
+          sport: form.sport,
+          startDate: form.startDate,
+          endDate: form.endDate
+        });
+        await admin.reloadTournaments();
+        setMessage("Tournament updated. Matches that were already generated keep their own dates -- reschedule those from the Matches tab.");
+        return;
+      }
+
       const created = await createTournament(admin.supabase, {
         clubId: admin.adminUser.club_id,
         name: form.name.trim(),
@@ -98,8 +146,8 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
       });
       await admin.reloadTournaments();
       admin.setSelectedTournamentId(created.id);
-      setForm({ name: "", sport: "pickleball", startDate: today, endDate: today });
-      setMessage("Tournament saved.");
+      setCreatingNew(false);
+      setMessage("Tournament created.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save the tournament.");
     } finally {
@@ -133,7 +181,7 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
     <div className="grid two">
       <div className="card stack">
         <div className="section-title">
-          <h2>Manage Tournaments</h2>
+          <h2>{creatingNew || !admin.selectedTournamentId ? "New Tournament" : `Editing: ${selectedTournament?.name ?? ""}`}</h2>
         </div>
         <div className="form-grid">
           <label className="field">
@@ -162,9 +210,22 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
           </div>
 
           <StatusBanner message={message} />
-          <button className="button" disabled={saving || !admin.adminUser} onClick={save} type="button">
-            {saving ? "Saving..." : "Save Tournament"}
-          </button>
+          <div className="toolbar">
+            <button className="button" disabled={saving || !admin.adminUser} onClick={save} type="button">
+              {saving ? "Saving..." : creatingNew || !admin.selectedTournamentId ? "Create tournament" : "Update tournament"}
+            </button>
+            {creatingNew ? (
+              admin.tournaments.length > 0 ? (
+                <button className="button secondary" disabled={saving} onClick={cancelNewTournament} type="button">
+                  Cancel
+                </button>
+              ) : null
+            ) : (
+              <button className="button secondary" disabled={saving} onClick={startNewTournament} type="button">
+                New tournament
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="admin-scoring-note">
