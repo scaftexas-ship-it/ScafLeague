@@ -15,6 +15,21 @@ import { RosterPane } from "./roster-pane";
 
 type MatchesTab = "roster" | "matches";
 
+/**
+ * Postgres reports the matches table's date checks by constraint name, e.g.
+ * 'violates check constraint "matches_check2"', which tells an admin nothing.
+ * MatchEditor validates these before saving, so this is only a backstop for a
+ * path that skips it -- but an unreadable error is worse than no error, since
+ * it looks like the save silently did nothing.
+ */
+function readableSaveError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("matches_check1")) return "The schedule week can't end before it starts.";
+  if (message.includes("matches_check2")) return "The extension week has to start after the schedule week ends -- move both weeks when rescheduling a match.";
+  if (message.includes("matches_check3")) return "The extension week can't end before it starts.";
+  return message || "Could not save the match.";
+}
+
 export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const [activeTab, setActiveTab] = useState<MatchesTab>("matches");
   const [savingMatchId, setSavingMatchId] = useState("");
@@ -34,7 +49,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
       await admin.reloadDivisions();
       setMessage("Match saved.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save the match.");
+      setMessage(readableSaveError(error));
     } finally {
       setSavingMatchId("");
     }

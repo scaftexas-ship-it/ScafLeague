@@ -62,6 +62,28 @@ export function MatchEditor({
 
   async function handleSave() {
     setLocalMessage("");
+
+    // The matches table enforces these as check constraints, and Postgres only
+    // reports them as "violates check constraint matches_check2" -- meaningless
+    // to an admin, and it surfaces at the top of the pane, far from the Save
+    // button they just pressed. Catching them here explains what's wrong right
+    // where they're looking. The extension week is the most common trip-up:
+    // pushing a match back means moving BOTH weeks, not just the schedule one.
+    if (scheduleWeekEnd < scheduleWeekStart) {
+      setLocalMessage("The schedule week can't end before it starts. Check the schedule week dates.");
+      return;
+    }
+    if (extensionWeekStart <= scheduleWeekEnd) {
+      setLocalMessage(
+        `The extension week has to start after the schedule week ends (${scheduleWeekEnd}). To move this match later, shift the extension week dates too.`
+      );
+      return;
+    }
+    if (extensionWeekEnd < extensionWeekStart) {
+      setLocalMessage("The extension week can't end before it starts. Check the extension week dates.");
+      return;
+    }
+
     const patch: MatchEditPatch = {
       round_label: roundLabel.trim() || null,
       target_score: Number(targetScore) || match.target_score,
