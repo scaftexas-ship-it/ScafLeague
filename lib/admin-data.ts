@@ -682,6 +682,12 @@ export async function updateMatch(
   return data as unknown as MatchRow;
 }
 
+/** Swaps which side of a match is home (entry_a is home by convention). Goes through the swap_match_home_away function so the match row and its positionally-stored set scores move together in one transaction -- see supabase/add-swap-home-away.sql. */
+export async function swapMatchHomeAway(supabase: SupabaseClient, matchId: string) {
+  const { error } = await supabase.rpc("swap_match_home_away", { target_match_id: matchId });
+  if (error) fail(error, "Could not swap home and away.");
+}
+
 export async function insertForfeitClaim(
   supabase: SupabaseClient,
   input: { matchId: string; claimedByEntryId: string; opponentEntryId: string; createdBy: string }

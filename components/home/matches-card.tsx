@@ -1,5 +1,6 @@
 import { ClipboardList } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Versus } from "@/components/ui/versus";
 import { formatStatusLabel } from "@/lib/format";
 import type { DivisionEntryRow, DivisionRow, MatchRow } from "@/lib/admin-data";
 
@@ -24,11 +25,7 @@ export function MatchesCard({ divisions, entries, matches }: { divisions: Divisi
                   <span className="pill">{match.round_label || `Round ${match.round}`}</span>
                   <span className="pill">To {match.target_score}</span>
                 </div>
-                <div className="versus">
-                  <span>{entryA?.label || "Entry A"}</span>
-                  <span className="subtle">vs</span>
-                  <span>{entryB?.label || "Entry B"}</span>
-                </div>
+                <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
                 <div className="score-line">
                   <span className="subtle">
                     {match.schedule_week_start} to {match.extension_week_end}

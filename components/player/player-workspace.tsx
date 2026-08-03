@@ -24,6 +24,7 @@ import { validateMatchSets } from "@/lib/match-scoring";
 import { todayIso } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Versus } from "@/components/ui/versus";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
@@ -336,11 +337,7 @@ export function PlayerWorkspace() {
                         <span className="pill">{match.round_label || `Round ${match.round}`}</span>
                         <span className="pill">To {match.target_score}</span>
                       </div>
-                      <div className="versus">
-                        <span>{entryA?.label || "Entry A"}</span>
-                        <span className="subtle">vs</span>
-                        <span>{entryB?.label || "Entry B"}</span>
-                      </div>
+                      <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
                       <div className="score-line">
                         <span className="subtle">
                           {match.schedule_week_start} to {match.extension_week_end}

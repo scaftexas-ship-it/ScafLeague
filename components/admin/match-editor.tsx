@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { ArrowLeftRight, Pencil } from "lucide-react";
 import { addDays } from "@/lib/league-rules";
 import { buildSetsFromForm, canSubmitScoreInWindow, setScoreFormFromSets, validateMatchSets } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
@@ -9,6 +9,7 @@ import { formatStatusLabel, todayIso } from "@/lib/format";
 import type { DivisionEntryRow, MatchRow, MatchSetRow } from "@/lib/admin-data";
 import type { MatchStatus, Sport } from "@/lib/types";
 import { ScoreGrid } from "@/components/ui/score-grid";
+import { Versus } from "@/components/ui/versus";
 
 const STATUS_OPTIONS: MatchStatus[] = ["scheduled", "score_submitted", "completed", "forfeit", "cancelled"];
 
@@ -31,7 +32,9 @@ export function MatchEditor({
   match,
   sets,
   onSave,
+  onSwapHomeAway,
   saving,
+  swapping,
   sport
 }: {
   divisionName: string;
@@ -40,7 +43,9 @@ export function MatchEditor({
   match: MatchRow;
   sets: MatchSetRow[];
   onSave: (match: MatchRow, sets: ReturnType<typeof buildSetsFromForm>, patch: MatchEditPatch) => Promise<void>;
+  onSwapHomeAway: (match: MatchRow) => Promise<void>;
   saving: boolean;
+  swapping: boolean;
   sport: Sport;
 }) {
   const [open, setOpen] = useState(false);
@@ -136,11 +141,7 @@ export function MatchEditor({
         <span className="pill">{match.round_label || `Round ${match.round}`}</span>
         <span className="pill orange">{formatStatusLabel(match.status)}</span>
       </div>
-      <div className="versus">
-        <span>{entryA?.label || "Entry A"}</span>
-        <span className="subtle">vs</span>
-        <span>{entryB?.label || "Entry B"}</span>
-      </div>
+      <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
       <div className="score-line">
         <span className="subtle">
           {match.schedule_week_start} to {match.extension_week_end}
@@ -221,6 +222,16 @@ export function MatchEditor({
               </select>
             </label>
           ) : null}
+
+          <div className="spread">
+            <span className="subtle">
+              Home: {entryA?.label || "Entry A"} &middot; Away: {entryB?.label || "Entry B"}
+            </span>
+            <button className="button secondary small" disabled={saving || swapping} onClick={() => onSwapHomeAway(match)} type="button">
+              <ArrowLeftRight size={14} aria-hidden />
+              {swapping ? "Swapping..." : "Swap home/away"}
+            </button>
+          </div>
 
           {localMessage ? <p className="status-banner" data-tone="error">{localMessage}</p> : null}
 

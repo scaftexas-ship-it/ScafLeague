@@ -722,6 +722,21 @@ button {
   font-size: 15px;
 }
 
+.versus-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.versus-role {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
 .score-line {
   display: flex;
   align-items: center;

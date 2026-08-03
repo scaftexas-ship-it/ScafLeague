@@ -110,7 +110,10 @@ export function MatchCard({
             <small>{formatWeekday(match.schedule_week_end)}</small>
           </div>
           <div className="mobile-match-opponent">
-            <span>{match.round_label || `Round ${match.round}`}</span>
+            <span>
+              {match.round_label || `Round ${match.round}`}
+              {playerEntryId ? <> &middot; {playerEntryId === match.entry_a_id ? "Home" : "Away"}</> : null}
+            </span>
             <strong>vs {opponentEntry?.label || entryB?.label || "Opponent"}</strong>
             <ContactLinks players={opponentPlayers} />
             <button className="add-result-button" disabled={!canOpenResult} onClick={() => setShowScoreForm((current) => !current)} type="button">

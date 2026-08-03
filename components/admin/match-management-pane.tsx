@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ClipboardX, Pencil } from "lucide-react";
-import { deleteDivision, renameDivision, replaceMatchSets, updateMatch } from "@/lib/admin-data";
+import { deleteDivision, renameDivision, replaceMatchSets, swapMatchHomeAway, updateMatch } from "@/lib/admin-data";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -33,6 +33,7 @@ function readableSaveError(error: unknown) {
 export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const [activeTab, setActiveTab] = useState<MatchesTab>("matches");
   const [savingMatchId, setSavingMatchId] = useState("");
+  const [swappingMatchId, setSwappingMatchId] = useState("");
   const [message, setMessage] = useState("");
   const [divisionFilter, setDivisionFilter] = useState("all");
   const [renamingDivision, setRenamingDivision] = useState(false);
@@ -52,6 +53,20 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
       setMessage(readableSaveError(error));
     } finally {
       setSavingMatchId("");
+    }
+  }
+
+  async function swapHomeAway(match: MatchRow) {
+    if (!admin.supabase) return;
+    setSwappingMatchId(match.id);
+    try {
+      await swapMatchHomeAway(admin.supabase, match.id);
+      await admin.reloadDivisions();
+      setMessage("Home and away swapped. Any recorded set scores moved with them.");
+    } catch (error) {
+      setMessage(readableSaveError(error));
+    } finally {
+      setSwappingMatchId("");
     }
   }
 
@@ -204,7 +219,9 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
                   key={match.id}
                   match={match}
                   onSave={saveMatch}
+                  onSwapHomeAway={swapHomeAway}
                   saving={savingMatchId === match.id}
+                  swapping={swappingMatchId === match.id}
                   sets={sets}
                   sport={sport}
                 />

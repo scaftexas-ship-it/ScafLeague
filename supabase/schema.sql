@@ -304,6 +304,54 @@ revoke all on function public.cancel_expired_matches() from public;
 revoke all on function public.cancel_expired_matches() from anon;
 revoke all on function public.cancel_expired_matches() from authenticated;
 
+/**
+ * Swaps which side of a match is home. entry_a is the home side by convention.
+ * Must also swap match_sets scores, which are stored positionally -- doing that
+ * as two client calls risks a partial swap that would invert a recorded result,
+ * so it lives here in one transaction. winner_entry_id references the entry
+ * rather than the side, so it stays correct untouched.
+ */
+create function public.swap_match_home_away(target_match_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  old_home uuid;
+  old_away uuid;
+  match_club uuid;
+  caller_club uuid;
+begin
+  if not public.is_admin() then
+    raise exception 'Only enabled admins can change home and away.';
+  end if;
+
+  select m.entry_a_id, m.entry_b_id, t.club_id
+    into old_home, old_away, match_club
+    from public.matches m
+    join public.divisions d on d.id = m.division_id
+    join public.tournaments t on t.id = d.tournament_id
+   where m.id = target_match_id;
+
+  if old_home is null then
+    raise exception 'Match not found.';
+  end if;
+
+  select club_id into caller_club from public.users where id = auth.uid();
+  if match_club is distinct from caller_club then
+    raise exception 'That match is not in your club.';
+  end if;
+
+  update public.matches set entry_a_id = old_away, entry_b_id = old_home where id = target_match_id;
+  update public.match_sets set entry_a_score = entry_b_score, entry_b_score = entry_a_score where match_id = target_match_id;
+end;
+$$;
+
+revoke all on function public.swap_match_home_away(uuid) from public;
+revoke all on function public.swap_match_home_away(uuid) from anon;
+grant execute on function public.swap_match_home_away(uuid) to authenticated;
+
 alter table public.clubs enable row level security;
 alter table public.users enable row level security;
 alter table public.player_profiles enable row level security;
