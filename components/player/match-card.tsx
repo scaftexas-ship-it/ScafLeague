@@ -102,6 +102,14 @@ export function MatchCard({
           {tournamentName ? <span className="pill">{tournamentName}</span> : null}
           <span className="pill blue">{division?.name || "Schedule"}</span>
           <span className="pill orange">{formatStatusLabel(match.status)}</span>
+          {/* Say plainly which side the viewer is on -- "Home"/"Away" alone reads
+              ambiguously when the card already names an opponent. Falls back to
+              naming the home side for an admin previewing someone else's match. */}
+          {playerEntryId ? (
+            <span className="pill">{playerEntryId === match.entry_a_id ? "You're Home" : "You're Away"}</span>
+          ) : (
+            <span className="pill">{entryA?.label || "Entry A"} at Home</span>
+          )}
         </div>
         <div className="mobile-match-main">
           <div className="play-by">
@@ -110,11 +118,15 @@ export function MatchCard({
             <small>{formatWeekday(match.schedule_week_end)}</small>
           </div>
           <div className="mobile-match-opponent">
-            <span>
-              {match.round_label || `Round ${match.round}`}
-              {playerEntryId ? <> &middot; {playerEntryId === match.entry_a_id ? "Home" : "Away"}</> : null}
-            </span>
+            <span>{match.round_label || `Round ${match.round}`}</span>
             <strong>vs {opponentEntry?.label || entryB?.label || "Opponent"}</strong>
+            <small className="subtle">
+              {playerEntryId
+                ? playerEntryId === match.entry_a_id
+                  ? "You host this one"
+                  : `${opponentEntry?.label || "Your opponent"} hosts this one`
+                : null}
+            </small>
             <ContactLinks players={opponentPlayers} />
             <button className="add-result-button" disabled={!canOpenResult} onClick={() => setShowScoreForm((current) => !current)} type="button">
               <Send size={20} aria-hidden />

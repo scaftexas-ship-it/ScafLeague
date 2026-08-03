@@ -48,6 +48,7 @@ export function PlayerWorkspace() {
   const [message, setMessage] = useState("Loading player schedule...");
   const [sportFilter, setSportFilter] = useState<Sport | "all">("all");
   const [tournamentFilter, setTournamentFilter] = useState<string>("all");
+  const [divisionFilter, setDivisionFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<"mine" | "all" | "points">("mine");
 
   useEffect(() => {
@@ -81,14 +82,46 @@ export function PlayerWorkspace() {
       // would keep showing an empty schedule. No-op once linked.
       await claimPlayerProfileIfEligible(supabase);
 
-      const loadedTournaments = await listTournaments(supabase, appUser.club_id);
-      if (loadedTournaments.length === 0) {
+      // Work out this player's own entries first -- everything below is scoped
+      // to the tournaments those entries sit in. Previously the page loaded
+      // every tournament in the club, so a player browsing the Tournament
+      // filter saw (and could read the schedules of) leagues they had nothing
+      // to do with.
+      const profiles = await listPlayerProfilesForUser(supabase, appUser.id);
+      const profileIds = profiles.map((profile) => profile.id);
+      const [directEntries, teamIds] = await Promise.all([listEntriesForPlayerIds(supabase, profileIds), listTeamIdsForPlayerIds(supabase, profileIds)]);
+      const teamEntries = await listEntriesForTeamIds(supabase, teamIds);
+      const myEntries = [...directEntries, ...teamEntries];
+      const entryIds = Array.from(new Set(myEntries.map((entry) => entry.id)));
+      const myDivisionIds = new Set(myEntries.map((entry) => entry.division_id));
+      setMyEntryIds(entryIds);
+
+      const clubTournaments = await listTournaments(supabase, appUser.club_id);
+      if (clubTournaments.length === 0) {
         setMessage("No tournament has been created yet.");
         return;
       }
-      setTournaments(loadedTournaments);
 
-      const loadedDivisions = await listDivisionsForTournaments(supabase, loadedTournaments.map((item) => item.id));
+      const clubDivisions = await listDivisionsForTournaments(supabase, clubTournaments.map((item) => item.id));
+
+      // Admins keep the whole club in view so they can preview any schedule.
+      const isAdmin = appUser.role === "admin";
+      const myTournamentIds = new Set(clubDivisions.filter((division) => myDivisionIds.has(division.id)).map((division) => division.tournament_id));
+      const loadedTournaments = isAdmin ? clubTournaments : clubTournaments.filter((tournament) => myTournamentIds.has(tournament.id));
+
+      if (loadedTournaments.length === 0) {
+        setTournaments([]);
+        setDivisions([]);
+        setMatches([]);
+        setMyMatches([]);
+        setStandings([]);
+        setMessage("You're not entered in any tournament yet. Once an admin adds you to a division, your schedule shows up here.");
+        return;
+      }
+
+      const visibleTournamentIdSet = new Set(loadedTournaments.map((tournament) => tournament.id));
+      const loadedDivisions = clubDivisions.filter((division) => visibleTournamentIdSet.has(division.tournament_id));
+      setTournaments(loadedTournaments);
       setDivisions(loadedDivisions);
       const divisionIds = loadedDivisions.map((division) => division.id);
       if (divisionIds.length === 0) {
@@ -106,22 +139,15 @@ export function PlayerWorkspace() {
 
       await loadContactDirectory(appUser.club_id, loadedEntries);
 
-      const profiles = await listPlayerProfilesForUser(supabase, appUser.id);
-      const profileIds = profiles.map((profile) => profile.id);
-      const [directEntries, teamIds] = await Promise.all([listEntriesForPlayerIds(supabase, profileIds), listTeamIdsForPlayerIds(supabase, profileIds)]);
-      const teamEntries = await listEntriesForTeamIds(supabase, teamIds);
-      const entryIds = Array.from(new Set([...directEntries, ...teamEntries].map((entry) => entry.id)));
-      setMyEntryIds(entryIds);
-
       if (entryIds.length > 0) {
         setMyMatches(allMatches.filter((match) => entryIds.includes(match.entry_a_id) || entryIds.includes(match.entry_b_id)));
         setMessage("Player schedule loaded.");
-      } else if (appUser.role === "admin") {
+      } else if (isAdmin) {
         setMyMatches(allMatches);
         setMessage("Admin preview: showing all scheduled tournament matches.");
       } else {
         setMyMatches([]);
-        setMessage("You are not assigned to any divisions yet. Tournament games are still visible below.");
+        setMessage("You are not assigned to any divisions yet.");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load your schedule.");
@@ -214,11 +240,23 @@ export function PlayerWorkspace() {
   const availableSports = Array.from(new Set(tournaments.map((tournament) => tournament.sport)));
   const sportTournaments = tournaments.filter((tournament) => sportFilter === "all" || tournament.sport === sportFilter);
   const visibleTournamentIds = new Set(tournamentFilter === "all" ? sportTournaments.map((tournament) => tournament.id) : [tournamentFilter]);
-  const visibleDivisionIds = new Set(divisions.filter((division) => visibleTournamentIds.has(division.tournament_id)).map((division) => division.id));
+  // Divisions the sport/tournament filters allow -- also the option list for the
+  // division filter, so it can never offer a division outside the current
+  // tournament selection.
+  const selectableDivisions = divisions.filter((division) => visibleTournamentIds.has(division.tournament_id));
+  const visibleDivisionIds = new Set(
+    (divisionFilter === "all" ? selectableDivisions : selectableDivisions.filter((division) => division.id === divisionFilter)).map((division) => division.id)
+  );
 
   function handleSportFilterChange(value: string) {
     setSportFilter(value as Sport | "all");
     setTournamentFilter("all");
+    setDivisionFilter("all");
+  }
+
+  function handleTournamentFilterChange(value: string) {
+    setTournamentFilter(value);
+    setDivisionFilter("all");
   }
 
   const visibleMyMatches = myMatches.filter((match) => visibleDivisionIds.has(match.division_id));
@@ -243,8 +281,8 @@ export function PlayerWorkspace() {
         </div>
       </section>
 
-      {tournaments.length > 1 ? (
-        <section className="card">
+      {tournaments.length > 1 || selectableDivisions.length > 1 ? (
+        <section className="card stack">
           <div className="field-row">
             <label className="field">
               <span>Sport</span>
@@ -259,7 +297,7 @@ export function PlayerWorkspace() {
             </label>
             <label className="field">
               <span>Tournament</span>
-              <select onChange={(event) => setTournamentFilter(event.target.value)} value={tournamentFilter}>
+              <select onChange={(event) => handleTournamentFilterChange(event.target.value)} value={tournamentFilter}>
                 <option value="all">All tournaments</option>
                 {sportTournaments.map((tournament) => (
                   <option key={tournament.id} value={tournament.id}>
@@ -269,6 +307,20 @@ export function PlayerWorkspace() {
               </select>
             </label>
           </div>
+          {selectableDivisions.length > 1 ? (
+            <label className="field">
+              <span>Division</span>
+              <select onChange={(event) => setDivisionFilter(event.target.value)} value={divisionFilter}>
+                <option value="all">All divisions</option>
+                {selectableDivisions.map((division) => (
+                  <option key={division.id} value={division.id}>
+                    {division.name}
+                    {tournamentFilter === "all" ? ` · ${tournaments.find((t) => t.id === division.tournament_id)?.name ?? ""}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </section>
       ) : null}
 
