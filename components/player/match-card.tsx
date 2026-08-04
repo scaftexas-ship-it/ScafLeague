@@ -106,9 +106,11 @@ export function MatchCard({
               ambiguously when the card already names an opponent. Falls back to
               naming the home side for an admin previewing someone else's match. */}
           {playerEntryId ? (
-            <span className="pill">{playerEntryId === match.entry_a_id ? "You're Home" : "You're Away"}</span>
+            <span className={`pill ${playerEntryId === match.entry_a_id ? "green" : "purple"}`}>
+              {playerEntryId === match.entry_a_id ? "You're Home" : "You're Away"}
+            </span>
           ) : (
-            <span className="pill">{entryA?.label || "Entry A"} at Home</span>
+            <span className="pill green">{entryA?.label || "Entry A"} at Home</span>
           )}
         </div>
         <div className="mobile-match-main">

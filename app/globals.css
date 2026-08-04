@@ -450,7 +450,7 @@ button {
 
 .pill.green {
   background: var(--color-success-soft);
-  color: var(--color-success);
+  color: #0f5132;
 }
 
 .pill.red {
@@ -460,7 +460,7 @@ button {
 
 .pill.purple {
   background: var(--color-info-soft);
-  color: var(--color-info);
+  color: #3d2f8f;
 }
 
 /* --------------------------------- Status -------------------------------- */
@@ -729,12 +729,33 @@ button {
   min-width: 0;
 }
 
+/* Badges rather than faint captions -- as muted grey text these were easy to
+   miss entirely. Green/purple keeps them distinct from the blue division and
+   orange status pills already on the same row. */
 .versus-role {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-text-faint);
+}
+
+/* Deliberately darker than --color-success / --color-info. Those sit at 3.7:1
+   and 4.4:1 on their soft backgrounds, under the 4.5:1 WCAG AA needs for text
+   this size; these land around 8.4:1 and 9:1. Same reason .pill.orange carries
+   its own hex rather than using --color-accent. */
+.versus-role[data-role="home"] {
+  background: var(--color-success-soft);
+  color: #0f5132;
+}
+
+.versus-role[data-role="away"] {
+  background: var(--color-info-soft);
+  color: #3d2f8f;
 }
 
 .score-line {

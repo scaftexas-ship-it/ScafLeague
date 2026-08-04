@@ -10,12 +10,16 @@ export function Versus({ homeLabel, awayLabel }: { homeLabel?: string; awayLabel
     <div className="versus">
       <span className="versus-side">
         <span>{homeLabel || "Entry A"}</span>
-        <small className="versus-role">Home</small>
+        <small className="versus-role" data-role="home">
+          Home
+        </small>
       </span>
       <span className="subtle">vs</span>
       <span className="versus-side">
         <span>{awayLabel || "Entry B"}</span>
-        <small className="versus-role">Away</small>
+        <small className="versus-role" data-role="away">
+          Away
+        </small>
       </span>
     </div>
   );
