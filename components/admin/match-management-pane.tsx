@@ -130,7 +130,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
         ariaLabel="Matches section"
         onChange={setActiveTab}
         options={[
-          { value: "roster", label: "Roster" },
+          { value: "roster", label: "Substitutions" },
           { value: "matches", label: "Match Management" }
         ]}
         value={activeTab}

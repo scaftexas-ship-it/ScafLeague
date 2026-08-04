@@ -758,6 +758,115 @@ button {
   color: #3d2f8f;
 }
 
+/* ------------------------------ Substitutions ----------------------------- */
+
+.sub-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.sub-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.sub-row-name {
+  font-size: 15px;
+}
+
+.sub-row-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sub-row-action select {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 400;
+}
+
+.sub-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--color-border);
+}
+
+.sub-member {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sub-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.sub-preview-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.sub-preview-change {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sub-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.sub-preview-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Darker than --color-danger / --color-success on purpose: on the muted preview
+   background those tokens measure 4.1:1 and 3.6:1, and struck-through text is
+   already harder to read. These sit near 7:1 and 8:1. */
+.sub-old {
+  color: #a11212;
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.sub-new {
+  color: #0f5132;
+  font-weight: 700;
+}
+
 .score-line {
   display: flex;
   align-items: center;

@@ -562,6 +562,13 @@ export async function insertDivisionEntries(
 }
 
 /** Swaps the player behind a singles division entry (e.g. an injury replacement mid-tournament). Existing and future matches for this entry carry over unchanged since they reference the entry id, not the player id. */
+/** Every division entry a team holds, across every division and tournament -- replaceTeamMember swaps the member on the team itself, so a doubles substitution reaches all of these, not just the one being looked at. */
+export async function listEntriesForTeam(supabase: SupabaseClient, teamId: string) {
+  const { data, error } = await supabase.from("division_entries").select("id, division_id, label, player_id, team_id").eq("team_id", teamId);
+  if (error) fail(error, "Could not check where this team is entered.");
+  return (data || []) as DivisionEntryRow[];
+}
+
 export async function replaceDivisionEntryPlayer(supabase: SupabaseClient, entryId: string, newPlayerId: string, newLabel: string) {
   const { error } = await supabase.from("division_entries").update({ player_id: newPlayerId, label: newLabel }).eq("id", entryId);
   if (error) fail(error, "Could not replace the player.");
