@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, ClipboardList, UsersRound } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
-import { getCurrentAppUser, listDivisionEntries, listDivisions, listMatches, listStandings, listTournaments } from "@/lib/admin-data";
-import type { DivisionEntryRow, DivisionRow, MatchRow, StandingRow, TournamentRow } from "@/lib/admin-data";
+import { getCurrentAppUser, listDivisionEntries, listDivisions, listMatchSets, listMatches, listStandings, listTournaments } from "@/lib/admin-data";
+import type { DivisionEntryRow, DivisionRow, MatchRow, MatchSetRow, StandingRow, TournamentRow } from "@/lib/admin-data";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchesCard } from "./matches-card";
 import { LeaderboardCard } from "./leaderboard-card";
@@ -18,6 +18,7 @@ export function HomeDashboard() {
   const [divisions, setDivisions] = useState<DivisionRow[]>([]);
   const [entries, setEntries] = useState<DivisionEntryRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [matchSets, setMatchSets] = useState<MatchSetRow[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [message, setMessage] = useState("Loading dashboard...");
 
@@ -101,6 +102,7 @@ export function HomeDashboard() {
       setEntries(entryRows);
       setStandings(standingRows);
       setMatches(matchRows);
+      setMatchSets(await listMatchSets(supabase, matchRows.map((match) => match.id)));
       setMessage("Dashboard loaded.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load the dashboard.");
@@ -144,7 +146,7 @@ export function HomeDashboard() {
       </section>
 
       <section className="grid two">
-        <MatchesCard divisions={divisions} entries={entries} matches={matches} />
+        <MatchesCard divisions={divisions} entries={entries} matchSets={matchSets} matches={matches} />
         <LeaderboardCard entries={entries} standings={standings} />
       </section>
 

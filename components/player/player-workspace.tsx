@@ -11,6 +11,7 @@ import {
   insertForfeitClaim,
   listDivisionEntries,
   listDivisionsForTournaments,
+  listMatchSets,
   listMatches,
   listStandings,
   listTournaments,
@@ -18,13 +19,14 @@ import {
   replaceMatchSets,
   updateMatch
 } from "@/lib/admin-data";
-import type { DivisionEntryRow, DivisionRow, MatchRow, PlayerProfileRow, TeamMemberRow, TournamentRow } from "@/lib/admin-data";
+import type { DivisionEntryRow, DivisionRow, MatchRow, MatchSetRow, PlayerProfileRow, TeamMemberRow, TournamentRow } from "@/lib/admin-data";
 import { listAllPlayersInClub, listEntriesForPlayerIds, listEntriesForTeamIds, listPlayerProfilesForUser, listTeamIdsForPlayerIds } from "@/lib/player-data";
 import { validateMatchSets } from "@/lib/match-scoring";
 import { todayIso } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Versus } from "@/components/ui/versus";
+import { MatchScore } from "@/components/ui/match-score";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
@@ -40,6 +42,7 @@ export function PlayerWorkspace() {
   const [divisions, setDivisions] = useState<DivisionRow[]>([]);
   const [entries, setEntries] = useState<DivisionEntryRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [matchSets, setMatchSets] = useState<MatchSetRow[]>([]);
   const [myEntryIds, setMyEntryIds] = useState<string[]>([]);
   const [myMatches, setMyMatches] = useState<MatchRow[]>([]);
   const [allPlayers, setAllPlayers] = useState<PlayerProfileRow[]>([]);
@@ -113,6 +116,7 @@ export function PlayerWorkspace() {
         setTournaments([]);
         setDivisions([]);
         setMatches([]);
+        setMatchSets([]);
         setMyMatches([]);
         setStandings([]);
         setMessage("You're not entered in any tournament yet. Once an admin adds you to a division, your schedule shows up here.");
@@ -136,6 +140,8 @@ export function PlayerWorkspace() {
       const allMatches = await reconcileExpiredMatches(supabase, loadedMatches, todayIso());
       setMatches(allMatches);
       setStandings(standingRows);
+      // Players could never see a posted score -- this was simply never loaded.
+      setMatchSets(await listMatchSets(supabase, allMatches.map((match) => match.id)));
 
       await loadContactDirectory(appUser.club_id, loadedEntries);
 
@@ -352,6 +358,7 @@ export function PlayerWorkspace() {
                     entryB={entries.find((entry) => entry.id === match.entry_b_id)}
                     key={match.id}
                     match={match}
+                    matchSets={matchSets.filter((set) => set.match_id === match.id)}
                     myEntryIds={myEntryIds}
                     onClaimForfeit={claimForfeit}
                     onSubmitScore={submitScore}
@@ -390,6 +397,17 @@ export function PlayerWorkspace() {
                         <span className="pill">To {match.target_score}</span>
                       </div>
                       <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
+                      <MatchScore
+                        sets={matchSets.filter((set) => set.match_id === match.id)}
+                        status={match.status}
+                        winnerLabel={
+                          match.winner_entry_id === match.entry_a_id
+                            ? entryA?.label
+                            : match.winner_entry_id === match.entry_b_id
+                              ? entryB?.label
+                              : undefined
+                        }
+                      />
                       <div className="score-line">
                         <span className="subtle">
                           {match.schedule_week_start} to {match.extension_week_end}

@@ -758,6 +758,53 @@ button {
   color: #3d2f8f;
 }
 
+/* -------------------------------- Match score ----------------------------- */
+
+.match-score {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.match-score-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
+.match-score-sets {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.match-score-set {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.match-score-dash {
+  color: var(--color-text-faint);
+}
+
+/* The set winner, so a glance reads the result without doing the arithmetic. */
+.match-score-win {
+  color: var(--color-text);
+  font-weight: 800;
+}
+
 /* ------------------------------ Substitutions ----------------------------- */
 
 .sub-row {

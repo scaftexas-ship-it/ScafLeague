@@ -6,9 +6,10 @@ import { addDays, canClaimForfeit } from "@/lib/league-rules";
 import { buildSetsFromForm, canSubmitScoreInWindow, emptySetScoreForm, getForfeitUnavailableReason, toDomainMatch } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
 import { formatShortDate, formatStatusLabel, formatWeekday, todayIso } from "@/lib/format";
-import type { DivisionEntryRow, DivisionRow, MatchRow, PlayerProfileRow, TeamMemberRow } from "@/lib/admin-data";
+import type { DivisionEntryRow, DivisionRow, MatchRow, MatchSetRow, PlayerProfileRow, TeamMemberRow } from "@/lib/admin-data";
 import type { MatchSet, Sport } from "@/lib/types";
 import { ScoreGrid } from "@/components/ui/score-grid";
+import { MatchScore } from "@/components/ui/match-score";
 import { ContactLinks } from "./contact-links";
 
 function getEntryPlayers(entry: DivisionEntryRow | undefined, players: PlayerProfileRow[], teamMembers: TeamMemberRow[]) {
@@ -28,6 +29,7 @@ export function MatchCard({
   entryA,
   entryB,
   match,
+  matchSets = [],
   myEntryIds,
   onClaimForfeit,
   onSubmitScore,
@@ -41,6 +43,7 @@ export function MatchCard({
   entryA?: DivisionEntryRow;
   entryB?: DivisionEntryRow;
   match: MatchRow;
+  matchSets?: MatchSetRow[];
   myEntryIds: string[];
   onClaimForfeit: (match: MatchRow, claimedByEntryId: string) => Promise<void>;
   onSubmitScore: (match: MatchRow, sets: MatchSet[]) => Promise<void>;
@@ -129,6 +132,11 @@ export function MatchCard({
                   : `${opponentEntry?.label || "Your opponent"} hosts this one`
                 : null}
             </small>
+            <MatchScore
+              sets={matchSets}
+              status={match.status}
+              winnerLabel={match.winner_entry_id === match.entry_a_id ? entryA?.label : match.winner_entry_id === match.entry_b_id ? entryB?.label : undefined}
+            />
             <ContactLinks players={opponentPlayers} />
             <button className="add-result-button" disabled={!canOpenResult} onClick={() => setShowScoreForm((current) => !current)} type="button">
               <Send size={20} aria-hidden />

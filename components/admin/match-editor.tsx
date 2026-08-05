@@ -10,6 +10,7 @@ import type { DivisionEntryRow, MatchRow, MatchSetRow } from "@/lib/admin-data";
 import type { MatchStatus, Sport } from "@/lib/types";
 import { ScoreGrid } from "@/components/ui/score-grid";
 import { Versus } from "@/components/ui/versus";
+import { MatchScore } from "@/components/ui/match-score";
 
 const STATUS_OPTIONS: MatchStatus[] = ["scheduled", "score_submitted", "completed", "forfeit", "cancelled"];
 
@@ -142,6 +143,11 @@ export function MatchEditor({
         <span className="pill orange">{formatStatusLabel(match.status)}</span>
       </div>
       <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
+      <MatchScore
+        sets={sets}
+        status={match.status}
+        winnerLabel={match.winner_entry_id === match.entry_a_id ? entryA?.label : match.winner_entry_id === match.entry_b_id ? entryB?.label : undefined}
+      />
       <div className="score-line">
         <span className="subtle">
           {match.schedule_week_start} to {match.extension_week_end}
