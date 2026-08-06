@@ -11,6 +11,7 @@ import type { MatchStatus, Sport } from "@/lib/types";
 import { ScoreGrid } from "@/components/ui/score-grid";
 import { Versus } from "@/components/ui/versus";
 import { MatchScore } from "@/components/ui/match-score";
+import { StatusPill } from "@/components/ui/status-pill";
 
 const STATUS_OPTIONS: MatchStatus[] = ["scheduled", "score_submitted", "completed", "forfeit", "cancelled"];
 
@@ -140,7 +141,7 @@ export function MatchEditor({
       <div className="match-meta">
         <span className="pill blue">{divisionName}</span>
         <span className="pill">{match.round_label || `Round ${match.round}`}</span>
-        <span className="pill orange">{formatStatusLabel(match.status)}</span>
+        <StatusPill status={match.status} />
       </div>
       <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
       <MatchScore

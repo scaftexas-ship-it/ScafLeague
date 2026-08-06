@@ -453,14 +453,52 @@ button {
   color: #0f5132;
 }
 
+/* --color-danger on the soft background lands at 4.03:1, under AA for text
+   this small. This darker red clears it at 6.95:1. */
 .pill.red {
   background: var(--color-danger-soft);
-  color: var(--color-danger);
+  color: #a11212;
 }
 
 .pill.purple {
   background: var(--color-info-soft);
   color: #3d2f8f;
+}
+
+/* Match status. Every list rendered this the same orange whatever the status
+   was, so "completed" and "scheduled" were told apart only by reading the
+   word. Decided results get a solid fill -- loud enough to spot while
+   scrolling, and distinct from the soft tinted pills (including the green
+   "at Home" badge) that sit right beside them. "scheduled" is nearly every
+   match, so it stays quiet on purpose. */
+.status-pill {
+  text-transform: capitalize;
+}
+
+.status-pill[data-status="scheduled"] {
+  background: var(--color-accent-soft);
+  color: #b45309;
+}
+
+.status-pill[data-status="score_submitted"] {
+  background: #e8eefc;
+  color: #1d4ed8;
+}
+
+.status-pill[data-status="completed"] {
+  background: #0f5132;
+  color: #ffffff;
+}
+
+.status-pill[data-status="forfeit"] {
+  background: #a11212;
+  color: #ffffff;
+}
+
+.status-pill[data-status="cancelled"] {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  text-decoration: line-through;
 }
 
 /* --------------------------------- Status -------------------------------- */

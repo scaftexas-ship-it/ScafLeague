@@ -27,6 +27,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Versus } from "@/components/ui/versus";
 import { MatchScore } from "@/components/ui/match-score";
+import { StatusPill } from "@/components/ui/status-pill";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
@@ -412,7 +413,7 @@ export function PlayerWorkspace() {
                         <span className="subtle">
                           {match.schedule_week_start} to {match.extension_week_end}
                         </span>
-                        <span className="pill orange">{match.status.replace(/_/g, " ")}</span>
+                        <StatusPill status={match.status} />
                       </div>
                     </article>
                   );

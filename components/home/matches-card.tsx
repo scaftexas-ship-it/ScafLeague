@@ -2,7 +2,7 @@ import { ClipboardList } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Versus } from "@/components/ui/versus";
 import { MatchScore } from "@/components/ui/match-score";
-import { formatStatusLabel } from "@/lib/format";
+import { StatusPill } from "@/components/ui/status-pill";
 import type { DivisionEntryRow, DivisionRow, MatchRow, MatchSetRow } from "@/lib/admin-data";
 
 export function MatchesCard({
@@ -46,7 +46,7 @@ export function MatchesCard({
                   <span className="subtle">
                     {match.schedule_week_start} to {match.extension_week_end}
                   </span>
-                  <span className="pill orange">{formatStatusLabel(match.status)}</span>
+                  <StatusPill status={match.status} />
                 </div>
               </article>
             );

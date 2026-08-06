@@ -5,11 +5,12 @@ import { CalendarDays, Check, Send } from "lucide-react";
 import { addDays, canClaimForfeit } from "@/lib/league-rules";
 import { buildSetsFromForm, canSubmitScoreInWindow, emptySetScoreForm, getForfeitUnavailableReason, toDomainMatch } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
-import { formatShortDate, formatStatusLabel, formatWeekday, todayIso } from "@/lib/format";
+import { formatShortDate, formatWeekday, todayIso } from "@/lib/format";
 import type { DivisionEntryRow, DivisionRow, MatchRow, MatchSetRow, PlayerProfileRow, TeamMemberRow } from "@/lib/admin-data";
 import type { MatchSet, Sport } from "@/lib/types";
 import { ScoreGrid } from "@/components/ui/score-grid";
 import { MatchScore } from "@/components/ui/match-score";
+import { StatusPill } from "@/components/ui/status-pill";
 import { ContactLinks } from "./contact-links";
 
 function getEntryPlayers(entry: DivisionEntryRow | undefined, players: PlayerProfileRow[], teamMembers: TeamMemberRow[]) {
@@ -104,7 +105,7 @@ export function MatchCard({
         <div className="match-meta">
           {tournamentName ? <span className="pill">{tournamentName}</span> : null}
           <span className="pill blue">{division?.name || "Schedule"}</span>
-          <span className="pill orange">{formatStatusLabel(match.status)}</span>
+          <StatusPill status={match.status} />
           {/* Say plainly which side the viewer is on -- "Home"/"Away" alone reads
               ambiguously when the card already names an opponent. Falls back to
               naming the home side for an admin previewing someone else's match. */}
