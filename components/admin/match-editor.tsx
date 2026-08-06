@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeftRight, Pencil } from "lucide-react";
+import { ArrowLeftRight, ListPlus, Pencil } from "lucide-react";
 import { addDays } from "@/lib/league-rules";
 import { buildSetsFromForm, canSubmitScoreInWindow, setScoreFormFromSets, validateMatchSets } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
@@ -67,6 +67,13 @@ export function MatchEditor({
   const today = todayIso();
   const canScoreUpdate = canSubmitScoreInWindow(match, today, addDays);
 
+  // Scores belong on any match that could still be played, not just one an
+  // admin has already flipped to "completed" by hand. Hiding the grid behind
+  // that dropdown meant opening a scheduled match showed nothing but dates --
+  // there was no visible way to add a score at all.
+  const scoreEntryApplies = status === "scheduled" || status === "score_submitted" || status === "completed";
+  const hasEnteredScores = buildSetsFromForm(scoreForm).length > 0;
+
   async function handleSave() {
     setLocalMessage("");
 
@@ -91,6 +98,11 @@ export function MatchEditor({
       return;
     }
 
+    // Typing a score into a scheduled match is how an admin records a result;
+    // making them also remember to change the status dropdown just invites a
+    // finished match that still reads "scheduled".
+    const effectiveStatus: MatchStatus = status === "scheduled" && hasEnteredScores ? "completed" : status;
+
     const patch: MatchEditPatch = {
       round_label: roundLabel.trim() || null,
       target_score: Number(targetScore) || match.target_score,
@@ -98,14 +110,14 @@ export function MatchEditor({
       schedule_week_end: scheduleWeekEnd,
       extension_week_start: extensionWeekStart,
       extension_week_end: extensionWeekEnd,
-      status,
+      status: effectiveStatus,
       winner_entry_id: null,
       forfeit_by_entry_id: null
     };
 
     let nextSets: ReturnType<typeof buildSetsFromForm> = [];
 
-    if (status === "completed" || status === "score_submitted") {
+    if (effectiveStatus === "completed" || effectiveStatus === "score_submitted") {
       if (!canScoreUpdate) {
         setLocalMessage("Score updates are outside the allowed schedule window for this match. Adjust the schedule dates above to allow it.");
         return;
@@ -123,7 +135,7 @@ export function MatchEditor({
         return;
       }
       patch.winner_entry_id = result.winnerEntryId;
-    } else if (status === "forfeit") {
+    } else if (effectiveStatus === "forfeit") {
       if (!forfeitWinnerId) {
         setLocalMessage("Choose which entry gets the forfeit win.");
         return;
@@ -153,9 +165,18 @@ export function MatchEditor({
         <span className="subtle">
           {match.schedule_week_start} to {match.extension_week_end}
         </span>
-        <button className="link-button" onClick={() => setOpen((current) => !current)} type="button">
-          <Pencil size={14} aria-hidden /> {open ? "Close" : "Edit"}
-        </button>
+        <span className="match-card-actions">
+          {/* Named outright, because "Edit" gave no hint that scoring lived
+              behind it -- an admin looking for a score button found none. */}
+          {!open && scoreEntryApplies ? (
+            <button className="link-button" onClick={() => setOpen(true)} type="button">
+              <ListPlus size={14} aria-hidden /> {sets.length > 0 ? "Edit score" : "Add score"}
+            </button>
+          ) : null}
+          <button className="link-button" onClick={() => setOpen((current) => !current)} type="button">
+            <Pencil size={14} aria-hidden /> {open ? "Close" : "Edit"}
+          </button>
+        </span>
       </div>
 
       {open ? (
@@ -203,19 +224,25 @@ export function MatchEditor({
             </label>
           </div>
 
-          {status === "completed" || status === "score_submitted" ? (
+          {scoreEntryApplies ? (
             !canScoreUpdate ? (
               <p className="subtle">Score updates are outside the allowed schedule window for this match. Adjust the schedule dates above to allow it.</p>
             ) : (
-              <ScoreGrid
-                aLabel={entryA?.label || "A"}
-                bLabel={entryB?.label || "B"}
-                numberOfSets={match.number_of_sets}
-                scoreForm={scoreForm}
-                setScoreForm={setScoreForm}
-                sport={sport}
-                targetScore={Number(targetScore) || match.target_score}
-              />
+              <>
+                <div className="spread">
+                  <strong>{sets.length > 0 ? "Score" : "Add score"}</strong>
+                  {status === "scheduled" ? <span className="subtle">Entering a score marks this match completed.</span> : null}
+                </div>
+                <ScoreGrid
+                  aLabel={entryA?.label || "A"}
+                  bLabel={entryB?.label || "B"}
+                  numberOfSets={match.number_of_sets}
+                  scoreForm={scoreForm}
+                  setScoreForm={setScoreForm}
+                  sport={sport}
+                  targetScore={Number(targetScore) || match.target_score}
+                />
+              </>
             )
           ) : null}
 
@@ -244,7 +271,7 @@ export function MatchEditor({
 
           <button
             className="button"
-            disabled={saving || ((status === "completed" || status === "score_submitted") && !canScoreUpdate)}
+            disabled={saving || (scoreEntryApplies && status !== "scheduled" && !canScoreUpdate)}
             onClick={handleSave}
             type="button"
           >

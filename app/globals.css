@@ -465,6 +465,12 @@ button {
   color: #3d2f8f;
 }
 
+.match-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* Match status. Every list rendered this the same orange whatever the status
    was, so "completed" and "scheduled" were told apart only by reading the
    word. Decided results get a solid fill -- loud enough to spot while
