@@ -94,6 +94,30 @@ export function RosterPane({ admin }: { admin: AdminData }) {
     return admin.divisions.find((division) => division.id === divisionId)?.name || "Division";
   }
 
+  /**
+   * Who is already playing in these divisions, counting both singles entries
+   * and every member of a team entered there.
+   *
+   * This is the only real constraint on a substitution: nobody can be entered
+   * in the same division twice. Anything wider blocks perfectly valid
+   * substitutes -- the old filter ruled out every player who belonged to any
+   * team anywhere in the club, so a badminton doubles partner could not be
+   * subbed into a pickleball team.
+   */
+  function playersEnteredIn(divisionIdsToCheck: Set<string>, ignoreTeamId?: string) {
+    const busy = new Set<string>();
+    for (const entry of admin.divisionEntries) {
+      if (!divisionIdsToCheck.has(entry.division_id)) continue;
+      if (entry.player_id) busy.add(entry.player_id);
+      if (entry.team_id && entry.team_id !== ignoreTeamId) {
+        for (const member of admin.teamMembers) {
+          if (member.team_id === entry.team_id) busy.add(member.player_id);
+        }
+      }
+    }
+    return busy;
+  }
+
   async function replaceSingles(entry: DivisionEntryRow, newPlayerId: string) {
     const newPlayer = admin.players.find((player) => player.id === newPlayerId);
     if (!admin.supabase || !newPlayer) return;
@@ -117,11 +141,12 @@ export function RosterPane({ admin }: { admin: AdminData }) {
     setSavingKey(key);
     setMessage("");
     try {
-      await replaceTeamMember(admin.supabase, teamId, oldPlayerId, newPlayerId);
+      const oldName = playerName(oldPlayerId);
+      await replaceTeamMember(admin.supabase, teamId, oldPlayerId, newPlayerId, { oldName, newName: newPlayer.display_name });
       await admin.reloadTeams();
       await admin.reloadDivisions();
       setReplacementByKey((current) => ({ ...current, [key]: "" }));
-      setMessage(`${playerName(oldPlayerId)} replaced with ${newPlayer.display_name} on this team.`);
+      setMessage(`${oldName} replaced with ${newPlayer.display_name} on this team. The team name and fixtures now show ${newPlayer.display_name}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not replace the player.");
     } finally {
@@ -258,12 +283,8 @@ export function RosterPane({ admin }: { admin: AdminData }) {
         <div className="stack">
           {visibleSingles.map((entry) => {
             const chosen = replacementByKey[entry.id] || "";
-            const takenElsewhere = new Set(
-              admin.divisionEntries
-                .filter((item) => item.division_id === entry.division_id && item.id !== entry.id && item.player_id)
-                .map((item) => item.player_id as string)
-            );
-            const options = admin.players.filter((player) => !takenElsewhere.has(player.id) && player.id !== entry.player_id);
+            const busy = playersEnteredIn(new Set([entry.division_id]));
+            const options = admin.players.filter((player) => !busy.has(player.id) && player.id !== entry.player_id);
             const chosenName = admin.players.find((player) => player.id === chosen)?.display_name || "";
             return (
               <div className="sub-row" key={entry.id}>
@@ -308,7 +329,9 @@ export function RosterPane({ admin }: { admin: AdminData }) {
             const reach = teamReach[teamId] || [];
             const reachDivisions = Array.from(new Set(reach.map((entry) => entry.division_id)));
             const outsideView = reachDivisions.filter((id) => !divisionIds.has(id)).length;
-            const teamEntryIds = reach.length > 0 ? reach.map((entry) => entry.id) : teamEntries.filter((entry) => entry.team_id === teamId).map((entry) => entry.id);
+            const scopeEntries = reach.length > 0 ? reach : teamEntries.filter((entry) => entry.team_id === teamId);
+            const teamEntryIds = scopeEntries.map((entry) => entry.id);
+            const teamDivisionIds = scopeEntries.map((entry) => entry.division_id);
 
             return (
               <div className="sub-row" key={teamId}>
@@ -335,11 +358,9 @@ export function RosterPane({ admin }: { admin: AdminData }) {
                     const key = `${teamId}:${member.player_id}`;
                     const chosen = replacementByKey[key] || "";
                     const teammateIds = new Set(members.filter((item) => item.player_id !== member.player_id).map((item) => item.player_id));
-                    const rosterPlayerIds = new Set(entries.flatMap((item) => (item.player_id ? [item.player_id] : [])));
-                    const anyTeamPlayerIds = new Set(admin.teamMembers.map((item) => item.player_id));
+                    const busy = playersEnteredIn(new Set(teamDivisionIds), teamId);
                     const options = admin.players.filter(
-                      (player) =>
-                        player.id !== member.player_id && !teammateIds.has(player.id) && !rosterPlayerIds.has(player.id) && !anyTeamPlayerIds.has(player.id)
+                      (player) => player.id !== member.player_id && !teammateIds.has(player.id) && !busy.has(player.id)
                     );
                     const chosenName = admin.players.find((player) => player.id === chosen)?.display_name || "";
                     return (

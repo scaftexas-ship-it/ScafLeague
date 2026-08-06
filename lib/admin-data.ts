@@ -532,12 +532,52 @@ export async function listTeamMembers(supabase: SupabaseClient, teamIds: string[
 }
 
 /** Swaps one player out of a doubles team for another (e.g. an injury replacement mid-tournament). The team id -- and every division entry / match that references it -- stays the same. */
-export async function replaceTeamMember(supabase: SupabaseClient, teamId: string, oldPlayerId: string, newPlayerId: string) {
+/**
+ * Swap one member of a team.
+ *
+ * A doubles team's name and entry labels are generated from the pair
+ * ("Asha / Ben"), so a swap that only touched team_members left the roster
+ * naming someone who no longer plays -- the team card, every division entry,
+ * and every fixture kept the old pair forever. Passing `names` rewrites the
+ * outgoing name wherever it appears.
+ *
+ * A name that never mentions the outgoing player is treated as deliberate
+ * (volleyball clubs name their teams outright) and left alone.
+ */
+export async function replaceTeamMember(
+  supabase: SupabaseClient,
+  teamId: string,
+  oldPlayerId: string,
+  newPlayerId: string,
+  names?: { oldName: string; newName: string }
+) {
   const insert = await supabase.from("team_members").insert({ team_id: teamId, player_id: newPlayerId });
   if (insert.error) fail(insert.error, "Could not add the replacement player to the team.");
 
   const remove = await supabase.from("team_members").delete().eq("team_id", teamId).eq("player_id", oldPlayerId);
   if (remove.error) fail(remove.error, "Could not remove the outgoing player from the team.");
+
+  if (!names?.oldName.trim() || !names.newName.trim()) return;
+
+  // Case-insensitive: labels are hand-typed as often as generated, so the same
+  // player shows up as "amit gupta" in one and "Amit Gupta" in the next.
+  const pattern = new RegExp(names.oldName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+
+  const team = await supabase.from("teams").select("name").eq("id", teamId).maybeSingle();
+  const nextTeamName = team.data?.name?.replace(pattern, names.newName);
+  if (nextTeamName && nextTeamName !== team.data?.name) {
+    const renamed = await supabase.from("teams").update({ name: nextTeamName }).eq("id", teamId);
+    if (renamed.error) fail(renamed.error, "The player was swapped, but the team name could not be updated.");
+  }
+
+  const entries = await supabase.from("division_entries").select("id, label").eq("team_id", teamId);
+  if (entries.error) fail(entries.error, "The player was swapped, but the entry labels could not be updated.");
+  for (const entry of entries.data || []) {
+    const nextLabel = entry.label.replace(pattern, names.newName);
+    if (nextLabel === entry.label) continue;
+    const relabelled = await supabase.from("division_entries").update({ label: nextLabel }).eq("id", entry.id);
+    if (relabelled.error) fail(relabelled.error, "The player was swapped, but the entry labels could not be updated.");
+  }
 }
 
 export async function listDivisionEntries(supabase: SupabaseClient, divisionIds: string[]) {
