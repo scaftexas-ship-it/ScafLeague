@@ -91,6 +91,8 @@ export type Standing = {
   points: number;
   setsWon: number;
   setsLost: number;
+  gamesWon: number;
+  gamesLost: number;
 };
 
 export type ScoringRules = {

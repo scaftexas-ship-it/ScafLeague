@@ -1,5 +1,6 @@
 import { Medal } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { formatGamesRating, gamesRating } from "@/lib/league-rules";
 import type { DivisionEntryRow, DivisionRow, StandingRow } from "@/lib/admin-data";
 
 function matchesPlayed(standing: StandingRow) {
@@ -10,10 +11,13 @@ function bonusPoints(standing: StandingRow) {
   return Math.max(standing.points - standing.wins * 4 - standing.losses, 0);
 }
 
-function winRate(standing: StandingRow) {
-  const played = matchesPlayed(standing);
-  if (played === 0) return "0.00";
-  return ((standing.wins / played) * 100).toFixed(2);
+/**
+ * R used to be the share of MATCHES won, which ignored how close any of them
+ * were -- a 2-0 sweep and a 2-1 scrap both read as one win. It is now the
+ * share of GAMES won, so the margin inside each match counts.
+ */
+function rating(standing: StandingRow) {
+  return formatGamesRating(standing.games_won, standing.games_lost);
 }
 
 export function PointsTable({ divisions, entries, standings }: { divisions: DivisionRow[]; entries: DivisionEntryRow[]; standings: StandingRow[] }) {
@@ -23,7 +27,13 @@ export function PointsTable({ divisions, entries, standings }: { divisions: Divi
       rows: standings
         .filter((standing) => standing.division_id === division.id)
         .map((standing) => ({ standing, entry: entries.find((entry) => entry.id === standing.entry_id) }))
-        .sort((a, b) => b.standing.points - a.standing.points || b.standing.wins - a.standing.wins || matchesPlayed(b.standing) - matchesPlayed(a.standing))
+        // Points decide the table; the games rating breaks ties beneath them.
+        .sort(
+          (a, b) =>
+            b.standing.points - a.standing.points ||
+            gamesRating(b.standing.games_won, b.standing.games_lost) - gamesRating(a.standing.games_won, a.standing.games_lost) ||
+            b.standing.wins - a.standing.wins
+        )
     }))
     .filter((table) => table.rows.length > 0);
 
@@ -35,6 +45,7 @@ export function PointsTable({ divisions, entries, standings }: { divisions: Divi
       </div>
       {tables.length > 0 ? (
         <div className="points-board-list">
+          <p className="subtle">M played &middot; W won &middot; L lost &middot; B bonus &middot; P points &middot; R rating (games won out of games played)</p>
           {tables.map(({ division, rows }) => (
             <div className="points-board" key={division.id}>
               <h3>{division.name}</h3>
@@ -48,7 +59,7 @@ export function PointsTable({ divisions, entries, standings }: { divisions: Divi
                       <th scope="col">L</th>
                       <th scope="col">B</th>
                       <th scope="col">P</th>
-                      <th scope="col">R</th>
+                      <th scope="col" title="Rating: games won out of games played">R</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -60,7 +71,7 @@ export function PointsTable({ divisions, entries, standings }: { divisions: Divi
                         <td>{standing.losses + standing.forfeits_lost}</td>
                         <td>{bonusPoints(standing)}</td>
                         <td>{standing.points}</td>
-                        <td>{winRate(standing)}</td>
+                        <td>{rating(standing)}</td>
                       </tr>
                     ))}
                   </tbody>

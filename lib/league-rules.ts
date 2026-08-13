@@ -75,7 +75,9 @@ export function calculateStandings(entries: DivisionEntry[], matches: Match[], r
       cancelled: 0,
       points: 0,
       setsWon: 0,
-      setsLost: 0
+      setsLost: 0,
+      gamesWon: 0,
+      gamesLost: 0
     });
   }
 
@@ -117,6 +119,13 @@ export function calculateStandings(entries: DivisionEntry[], matches: Match[], r
 
     let loserSetWins = 0;
     for (const set of match.sets) {
+      // The raw numbers are games in tennis and rally points elsewhere, but
+      // the rating built from them is a ratio, so it stays comparable.
+      a.gamesWon += set.entryAScore;
+      a.gamesLost += set.entryBScore;
+      b.gamesWon += set.entryBScore;
+      b.gamesLost += set.entryAScore;
+
       const setWinner = getSetWinner(set);
       if (setWinner === "A") {
         a.setsWon += 1;
@@ -132,7 +141,35 @@ export function calculateStandings(entries: DivisionEntry[], matches: Match[], r
     if (loserSetWins > 0) loser.points += rules.bonusPointPerSetWonWhenLost;
   }
 
-  return Array.from(standings.values()).sort((a, b) => b.points - a.points || b.wins - a.wins || b.setsWon - a.setsWon);
+  return Array.from(standings.values()).sort(
+    (a, b) =>
+      b.points - a.points ||
+      gamesRating(b.gamesWon, b.gamesLost) - gamesRating(a.gamesWon, a.gamesLost) ||
+      b.wins - a.wins ||
+      b.setsWon - a.setsWon
+  );
+}
+
+/**
+ * A competitor's rating: the share of games they won out of the games they
+ * played, counting every game of every match rather than just who took the
+ * match. Two straight-set 6-4 wins is 12 games won of 20 played -- .600.
+ *
+ * Ratio rather than a raw count on purpose: a tennis set runs to 6 and a
+ * badminton game to 21, so totals are not comparable across sports but shares
+ * are. Forfeits record no game scores and so do not move it either way.
+ *
+ * Returns 0 for someone who has not played, which sorts them below anyone who
+ * has. Use formatGamesRating for display, which shows those as "-" instead.
+ */
+export function gamesRating(gamesWon: number, gamesLost: number) {
+  const played = gamesWon + gamesLost;
+  return played === 0 ? 0 : gamesWon / played;
+}
+
+/** gamesRating as a 3-decimal string, or "-" when no games have been played. */
+export function formatGamesRating(gamesWon: number, gamesLost: number) {
+  return gamesWon + gamesLost === 0 ? "-" : gamesRating(gamesWon, gamesLost).toFixed(3);
 }
 
 /** Reorders entries best-to-worst by current standings, for seeding a playoff bracket off group results (top-4 to semifinals, top-N from two divisions combined into cross-group quarterfinals, etc). Entries with no standings row yet (haven't played) sort last, in their original order. */

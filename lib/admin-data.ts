@@ -757,15 +757,20 @@ export type StandingRow = {
   forfeits_won: number;
   forfeits_lost: number;
   cancelled: number;
+  games_won: number;
+  games_lost: number;
   points: number;
 };
 
+/**
+ * Selects * rather than naming columns so the app works either side of
+ * add-games-rating.sql: naming games_won/games_lost would make every
+ * leaderboard fail outright until that migration is run. Missing columns just
+ * default to zero, which shows the rating as "-" instead of breaking the page.
+ */
 export async function listStandings(supabase: SupabaseClient, divisionIds: string[]) {
   if (divisionIds.length === 0) return [] as StandingRow[];
-  const { data, error } = await supabase
-    .from("standings")
-    .select("division_id, entry_id, played, wins, losses, forfeits_won, forfeits_lost, cancelled, points")
-    .in("division_id", divisionIds);
+  const { data, error } = await supabase.from("standings").select("*").in("division_id", divisionIds);
   if (error) fail(error, "Could not load standings.");
-  return (data || []) as StandingRow[];
+  return (data || []).map((row) => ({ ...row, games_won: row.games_won ?? 0, games_lost: row.games_lost ?? 0 })) as StandingRow[];
 }

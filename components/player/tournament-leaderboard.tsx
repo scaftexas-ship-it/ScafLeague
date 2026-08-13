@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Trophy } from "lucide-react";
 import type { DivisionEntryRow, DivisionRow, StandingRow } from "@/lib/admin-data";
 import { EmptyState } from "@/components/ui/empty-state";
+import { formatGamesRating, gamesRating } from "@/lib/league-rules";
 
 type AggregateRow = {
   identity: string;
@@ -13,6 +14,8 @@ type AggregateRow = {
   wins: number;
   losses: number;
   points: number;
+  gamesWon: number;
+  gamesLost: number;
 };
 
 function entryIdentity(entry: DivisionEntryRow) {
@@ -51,16 +54,31 @@ export function TournamentLeaderboard({
     if (!entry) continue;
 
     const identity = entryIdentity(entry);
-    const row = totals.get(identity) || { identity, label: entry.label, divisionCount: 0, played: 0, wins: 0, losses: 0, points: 0 };
+    const row = totals.get(identity) || {
+      identity,
+      label: entry.label,
+      divisionCount: 0,
+      played: 0,
+      wins: 0,
+      losses: 0,
+      points: 0,
+      gamesWon: 0,
+      gamesLost: 0
+    };
     row.divisionCount += 1;
     row.played += standing.played + standing.forfeits_won + standing.forfeits_lost;
     row.wins += standing.wins + standing.forfeits_won;
     row.losses += standing.losses + standing.forfeits_lost;
     row.points += standing.points;
+    row.gamesWon += standing.games_won;
+    row.gamesLost += standing.games_lost;
     totals.set(identity, row);
   }
 
-  const rows = Array.from(totals.values()).sort((a, b) => b.points - a.points || b.wins - a.wins || b.played - a.played);
+  // Points decide the order; the games rating breaks ties beneath them.
+  const rows = Array.from(totals.values()).sort(
+    (a, b) => b.points - a.points || gamesRating(b.gamesWon, b.gamesLost) - gamesRating(a.gamesWon, a.gamesLost) || b.wins - a.wins
+  );
 
   return (
     <div className="card">
@@ -98,7 +116,7 @@ export function TournamentLeaderboard({
                 <th scope="col">W</th>
                 <th scope="col">L</th>
                 <th scope="col">P</th>
-                <th scope="col">Avg</th>
+                <th scope="col" title="Rating: games won out of games played">R</th>
               </tr>
             </thead>
             <tbody>
@@ -111,7 +129,7 @@ export function TournamentLeaderboard({
                   <td>{row.wins}</td>
                   <td>{row.losses}</td>
                   <td>{row.points}</td>
-                  <td>{row.played > 0 ? (row.points / row.played).toFixed(1) : "-"}</td>
+                  <td>{formatGamesRating(row.gamesWon, row.gamesLost)}</td>
                 </tr>
               ))}
             </tbody>

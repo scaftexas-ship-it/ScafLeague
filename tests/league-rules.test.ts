@@ -4,6 +4,8 @@ import {
   calculateStandings,
   canClaimForfeit,
   expireUnplayedMatches,
+  formatGamesRating,
+  gamesRating,
   generateEliminatorSchedule,
   generateRoundRobinSchedule,
   rankEntriesByStandings
@@ -366,4 +368,72 @@ test("calculateStandings uses a club's custom scoring rules instead of the 4/1/1
   const byId = Object.fromEntries(standings.map((s) => [s.entryId, s]));
   assert.equal(byId.a.points, 3);
   assert.equal(byId.b.points, 2);
+});
+
+test("rating is games won over games played -- 6-4, 6-4 is .600 for the winner", () => {
+  const pair: DivisionEntry[] = [
+    { id: "a", divisionId: "d-1", label: "A", playerIds: ["p-a"] },
+    { id: "b", divisionId: "d-1", label: "B", playerIds: ["p-b"] }
+  ];
+  const match: Match = {
+    divisionId: "d-1",
+    round: 1,
+    id: "m-1",
+    entryAId: "a",
+    entryBId: "b",
+    scheduleWeekStart: "2026-07-06",
+    scheduleWeekEnd: "2026-07-12",
+    extensionWeekStart: "2026-07-13",
+    extensionWeekEnd: "2026-07-19",
+    status: "completed",
+    sets: [
+      { setNumber: 1, entryAScore: 6, entryBScore: 4 },
+      { setNumber: 2, entryAScore: 6, entryBScore: 4 }
+    ]
+  };
+
+  const byId = Object.fromEntries(calculateStandings(pair, [match]).map((s) => [s.entryId, s]));
+  // 12 games won of 20 played for the winner, 8 of 20 for the loser.
+  assert.equal(byId.a.gamesWon, 12);
+  assert.equal(byId.a.gamesLost, 8);
+  assert.equal(formatGamesRating(byId.a.gamesWon, byId.a.gamesLost), "0.600");
+  assert.equal(formatGamesRating(byId.b.gamesWon, byId.b.gamesLost), "0.400");
+
+  // The points rules are untouched by any of this.
+  assert.equal(byId.a.points, 4);
+  assert.equal(byId.b.points, 1);
+});
+
+test("rating stays comparable across sports and ignores forfeits", () => {
+  // A badminton game runs to 21 and a tennis set to 6, so raw totals are not
+  // comparable -- the ratio is.
+  assert.equal(formatGamesRating(42, 30), formatGamesRating(14, 10));
+  // Nobody has played, so there is nothing to rate.
+  assert.equal(formatGamesRating(0, 0), "-");
+  assert.equal(gamesRating(0, 0), 0);
+});
+
+test("points still outrank the games rating, which only breaks ties", () => {
+  const pair: DivisionEntry[] = [
+    { id: "a", divisionId: "d-1", label: "A", playerIds: ["p-a"] },
+    { id: "b", divisionId: "d-1", label: "B", playerIds: ["p-b"] },
+    { id: "c", divisionId: "d-1", label: "C", playerIds: ["p-c"] }
+  ];
+  const base = {
+    divisionId: "d-1",
+    scheduleWeekStart: "2026-07-06",
+    scheduleWeekEnd: "2026-07-12",
+    extensionWeekStart: "2026-07-13",
+    extensionWeekEnd: "2026-07-19",
+    status: "completed" as const
+  };
+  // A beats C narrowly; B beats C in a rout. Both winners hold 4 points, so
+  // B's better rating must put them above A.
+  const matches: Match[] = [
+    { ...base, id: "m-1", round: 1, entryAId: "a", entryBId: "c", sets: [{ setNumber: 1, entryAScore: 11, entryBScore: 9 }] },
+    { ...base, id: "m-2", round: 2, entryAId: "b", entryBId: "c", sets: [{ setNumber: 1, entryAScore: 11, entryBScore: 1 }] }
+  ];
+
+  const order = calculateStandings(pair, matches).map((s) => s.entryId);
+  assert.deepEqual(order, ["b", "a", "c"]);
 });
