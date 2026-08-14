@@ -72,8 +72,12 @@ select
   sum(forfeits_won)::integer as forfeits_won,
   sum(forfeits_lost)::integer as forfeits_lost,
   sum(cancelled)::integer as cancelled,
+  sum(points)::integer as points,
+  -- Appended AFTER points on purpose. "create or replace view" can only add
+  -- columns to the end -- slotting these in ahead of points reads as renaming
+  -- the 9th column and fails with 42P16. Order is irrelevant to the app,
+  -- which reads these by name.
   sum(games_won)::integer as games_won,
-  sum(games_lost)::integer as games_lost,
-  sum(points)::integer as points
+  sum(games_lost)::integer as games_lost
 from match_points
 group by division_id, entry_id;
