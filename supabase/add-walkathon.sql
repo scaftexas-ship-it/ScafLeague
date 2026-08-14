@@ -85,6 +85,7 @@ as $$
 declare
   window_start date;
   window_end date;
+  wk date;
 begin
   select w.start_date, w.end_date into window_start, window_end
   from public.walkathons w where w.id = new.walkathon_id;
@@ -94,11 +95,18 @@ begin
       using errcode = 'check_violation';
   end if;
 
+  -- Computed here rather than read from new.week_start. week_start is a
+  -- GENERATED column and Postgres fills those in AFTER before-triggers run,
+  -- so new.week_start is still null at this point -- comparing against it
+  -- silently matched nothing and let a weekly total sit on top of the same
+  -- week's daily entries, double counting both.
+  wk := (date_trunc('week', new.entry_date::timestamp))::date;
+
   if new.covers_week then
     if exists (
       select 1 from public.walkathon_step_entries e
       where e.walkathon_id = new.walkathon_id and e.player_id = new.player_id
-        and e.id <> new.id and not e.covers_week and e.week_start = new.week_start
+        and e.id <> new.id and not e.covers_week and e.week_start = wk
     ) then
       raise exception 'You already logged individual days in that week. Remove them before posting a weekly total.'
         using errcode = 'check_violation';
@@ -107,7 +115,7 @@ begin
     if exists (
       select 1 from public.walkathon_step_entries e
       where e.walkathon_id = new.walkathon_id and e.player_id = new.player_id
-        and e.id <> new.id and e.covers_week and e.week_start = new.week_start
+        and e.id <> new.id and e.covers_week and e.week_start = wk
     ) then
       raise exception 'You already posted a weekly total for that week. Remove it before logging single days.'
         using errcode = 'check_violation';
