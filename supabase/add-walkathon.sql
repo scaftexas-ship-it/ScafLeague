@@ -1,10 +1,21 @@
 -- Walkathon: registered players log step counts, and a dashboard ranks them.
 -- Run once in the Supabase SQL Editor. Safe to re-run.
 --
--- Steps live in their own tables rather than being squeezed into tournaments
--- and matches. A walkathon has no opponents, no sets and no fixtures, so
--- reusing those would mean every schedule builder, standings view and match
--- pane in the app had to learn to skip it.
+-- NON-DESTRUCTIVE BY CONSTRUCTION. This script contains no drop, no delete,
+-- no update, no truncate and no alter of any existing table. It only creates
+-- new objects:
+--   tables    walkathons, walkathon_participants, walkathon_step_entries
+--   functions walkathon_validate_entry, can_post_walkathon_steps
+--   plus indexes, one trigger and RLS policies, all on those new tables.
+--
+-- It does REFERENCE three existing tables -- clubs, users and player_profiles
+-- -- as foreign keys. A foreign key reads those tables and adds a constraint;
+-- it never modifies a row in them. (Adding one takes a brief lock on the
+-- referenced table, so run it when the league is quiet if you like, but no
+-- data changes either way.)
+--
+-- Re-runnability is handled with "if not exists" guards rather than by
+-- dropping and recreating, so nothing is ever removed on a second run.
 --
 -- Two rules are enforced down here rather than in the UI, because a
 -- leaderboard nobody can quietly inflate is the whole point:
@@ -108,10 +119,19 @@ begin
 end;
 $$;
 
-drop trigger if exists walkathon_validate_entry_trigger on public.walkathon_step_entries;
-create trigger walkathon_validate_entry_trigger
-  before insert or update on public.walkathon_step_entries
-  for each row execute function public.walkathon_validate_entry();
+-- Created only when absent, so a re-run leaves the existing trigger alone.
+do $$
+begin
+  if not exists (
+    select 1 from pg_trigger
+    where tgname = 'walkathon_validate_entry_trigger'
+      and tgrelid = 'public.walkathon_step_entries'::regclass
+  ) then
+    create trigger walkathon_validate_entry_trigger
+      before insert or update on public.walkathon_step_entries
+      for each row execute function public.walkathon_validate_entry();
+  end if;
+end $$;
 
 /** True when the caller owns that player profile AND is registered for that walkathon. */
 create or replace function public.can_post_walkathon_steps(target_walkathon uuid, target_player uuid)
@@ -135,30 +155,45 @@ alter table public.walkathons enable row level security;
 alter table public.walkathon_participants enable row level security;
 alter table public.walkathon_step_entries enable row level security;
 
-drop policy if exists "authenticated read walkathons" on public.walkathons;
-create policy "authenticated read walkathons" on public.walkathons for select to authenticated using (true);
-drop policy if exists "admins manage walkathons" on public.walkathons;
-create policy "admins manage walkathons" on public.walkathons for all using (public.is_admin()) with check (public.is_admin());
+-- Each policy is created only if it isn't already there. Everyone signed in
+-- can READ every step entry -- that is what makes a leaderboard possible.
+-- Writing is limited to your own registered profile.
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'walkathons' and policyname = 'authenticated read walkathons') then
+    create policy "authenticated read walkathons" on public.walkathons for select to authenticated using (true);
+  end if;
 
-drop policy if exists "authenticated read walkathon participants" on public.walkathon_participants;
-create policy "authenticated read walkathon participants" on public.walkathon_participants for select to authenticated using (true);
-drop policy if exists "admins manage walkathon participants" on public.walkathon_participants;
-create policy "admins manage walkathon participants" on public.walkathon_participants for all using (public.is_admin()) with check (public.is_admin());
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'walkathons' and policyname = 'admins manage walkathons') then
+    create policy "admins manage walkathons" on public.walkathons for all using (public.is_admin()) with check (public.is_admin());
+  end if;
 
--- Everyone signed in can read every step entry -- that is what makes a
--- leaderboard possible. Writing is limited to your own registered profile.
-drop policy if exists "authenticated read walkathon steps" on public.walkathon_step_entries;
-create policy "authenticated read walkathon steps" on public.walkathon_step_entries for select to authenticated using (true);
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'walkathon_participants' and policyname = 'authenticated read walkathon participants') then
+    create policy "authenticated read walkathon participants" on public.walkathon_participants for select to authenticated using (true);
+  end if;
 
-drop policy if exists "players post their own walkathon steps" on public.walkathon_step_entries;
-create policy "players post their own walkathon steps" on public.walkathon_step_entries
-  for all to authenticated
-  using (public.can_post_walkathon_steps(walkathon_id, player_id))
-  with check (public.can_post_walkathon_steps(walkathon_id, player_id));
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'walkathon_participants' and policyname = 'admins manage walkathon participants') then
+    create policy "admins manage walkathon participants" on public.walkathon_participants for all using (public.is_admin()) with check (public.is_admin());
+  end if;
 
-drop policy if exists "admins manage walkathon steps" on public.walkathon_step_entries;
-create policy "admins manage walkathon steps" on public.walkathon_step_entries
-  for all using (public.is_admin()) with check (public.is_admin());
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'walkathon_step_entries' and policyname = 'authenticated read walkathon steps') then
+    create policy "authenticated read walkathon steps" on public.walkathon_step_entries for select to authenticated using (true);
+  end if;
 
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'walkathon_step_entries' and policyname = 'players post their own walkathon steps') then
+    create policy "players post their own walkathon steps" on public.walkathon_step_entries
+      for all to authenticated
+      using (public.can_post_walkathon_steps(walkathon_id, player_id))
+      with check (public.can_post_walkathon_steps(walkathon_id, player_id));
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'walkathon_step_entries' and policyname = 'admins manage walkathon steps') then
+    create policy "admins manage walkathon steps" on public.walkathon_step_entries
+      for all using (public.is_admin()) with check (public.is_admin());
+  end if;
+end $$;
+
+-- Scoped to the new function above and nothing else. anon's auth.uid() is
+-- null so it could only ever get false back, but there is no reason to offer.
 revoke all on function public.can_post_walkathon_steps(uuid, uuid) from anon;
 grant execute on function public.can_post_walkathon_steps(uuid, uuid) to authenticated;
