@@ -106,3 +106,47 @@ export function buildLeaderboard(playerIds: string[], entries: WalkathonStepEntr
 export function formatSteps(steps: number) {
   return steps.toLocaleString("en-US");
 }
+
+/** How far back a player may still fill in steps they forgot to log. */
+export const STEP_BACKDATE_DAYS = 7;
+
+/**
+ * The window a player may still log, narrowed to the walkathon's own dates.
+ *
+ * A weekly post is filed against its Monday, so the week-mode floor reaches
+ * further back than seven days: a week that ENDED within the last seven days
+ * began up to thirteen days ago. Judging a weekly post by its Monday alone
+ * would mean a Sunday-to-Saturday week became unpostable the day after it
+ * finished, which is exactly when people total one up.
+ */
+export function loggableDateBounds(
+  mode: "day" | "week",
+  todayIso: string,
+  walkathon: { start_date: string; end_date: string }
+) {
+  const earliest = addDaysIso(todayIso, -(mode === "week" ? STEP_BACKDATE_DAYS + 6 : STEP_BACKDATE_DAYS));
+  return {
+    min: earliest > walkathon.start_date ? earliest : walkathon.start_date,
+    max: todayIso < walkathon.end_date ? todayIso : walkathon.end_date
+  };
+}
+
+/** Why this date can't be logged, or null when it's fine. Mirrors the trigger in add-walkathon-backdate.sql. */
+export function describeDateProblem(
+  mode: "day" | "week",
+  dateIso: string,
+  todayIso: string,
+  walkathon: { start_date: string; end_date: string }
+) {
+  const target = mode === "week" ? weekStartIso(dateIso) : dateIso;
+  if (target < walkathon.start_date || target > walkathon.end_date) {
+    return `That date is outside the walkathon (${walkathon.start_date} to ${walkathon.end_date}).`;
+  }
+  if (target > todayIso) return "You can't log steps for a date in the future.";
+  // For a week, the clock starts when the week ended rather than when it began.
+  const measuredFrom = mode === "week" ? addDaysIso(target, 6) : target;
+  if (measuredFrom < addDaysIso(todayIso, -STEP_BACKDATE_DAYS)) {
+    return `Steps can only be logged up to ${STEP_BACKDATE_DAYS} days back.`;
+  }
+  return null;
+}

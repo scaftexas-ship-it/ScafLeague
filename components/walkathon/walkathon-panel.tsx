@@ -10,7 +10,16 @@ import {
   postStepEntry
 } from "@/lib/walkathon-data";
 import type { WalkathonRow, WalkathonStepEntryRow } from "@/lib/walkathon-data";
-import { buildLeaderboard, formatSteps, periodRange, totalSteps, weekStartIso } from "@/lib/walkathon";
+import {
+  STEP_BACKDATE_DAYS,
+  buildLeaderboard,
+  describeDateProblem,
+  formatSteps,
+  loggableDateBounds,
+  periodRange,
+  totalSteps,
+  weekStartIso
+} from "@/lib/walkathon";
 import type { StepPeriod } from "@/lib/walkathon";
 import { todayIso } from "@/lib/format";
 import type { PlayerProfileRow } from "@/lib/admin-data";
@@ -89,6 +98,7 @@ export function WalkathonPanel({
   }
 
   const { start, end } = useMemo(() => periodRange(period, today), [period, today]);
+  const dateBounds = selected ? loggableDateBounds(mode, today, selected) : null;
 
   const leaderboard = useMemo(
     () => buildLeaderboard(participantIds, entries, start, end),
@@ -108,6 +118,14 @@ export function WalkathonPanel({
       return;
     }
     if (!myRegisteredId || !selected) return;
+
+    // Say why before the round trip. The same rule is enforced by the trigger,
+    // so this is a courtesy rather than the boundary.
+    const problem = describeDateProblem(mode, dateInput, today, selected);
+    if (problem) {
+      setMessage(problem);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -206,8 +224,8 @@ export function WalkathonPanel({
             <label className="field">
               <span>{mode === "week" ? "Any date in that week" : "Date"}</span>
               <input
-                max={selected?.end_date}
-                min={selected?.start_date}
+                max={dateBounds?.max}
+                min={dateBounds?.min}
                 onChange={(event) => setDateInput(event.target.value)}
                 type="date"
                 value={dateInput}
@@ -228,6 +246,9 @@ export function WalkathonPanel({
           {mode === "week" ? (
             <p className="subtle">Posting a week total for the week beginning {weekStartIso(dateInput)}.</p>
           ) : null}
+          <p className="subtle">
+            You can log today and up to {STEP_BACKDATE_DAYS} days back{dateBounds ? ` -- ${dateBounds.min} to ${dateBounds.max}` : ""}.
+          </p>
           <button className="button" disabled={saving || stepsInput === ""} type="submit">
             {saving ? "Saving..." : "Save steps"}
           </button>

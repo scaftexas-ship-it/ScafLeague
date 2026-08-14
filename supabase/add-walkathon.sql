@@ -95,6 +95,27 @@ begin
       using errcode = 'check_violation';
   end if;
 
+  -- Backdating window. Filling in a day you forgot is fine; quietly loading
+  -- two months of steps into a live leaderboard is not. Admins are exempt so
+  -- someone can still correct the record after the fact.
+  if not public.is_admin() then
+    -- The future bound carries one day of slack because current_date here is
+    -- the server's (UTC) while the player's device supplies its own local
+    -- date -- without it, anyone east of UTC would be told their own today is
+    -- in the future. A day of slack cannot be used to log a week ahead.
+    if new.entry_date > current_date + 1 then
+      raise exception 'You can''t log steps for a date in the future.'
+        using errcode = 'check_violation';
+    end if;
+
+    -- For a weekly total the clock starts when the week ENDED, not when it
+    -- began, so a week stays postable for seven days after it finishes.
+    if (case when new.covers_week then new.entry_date + 6 else new.entry_date end) < current_date - 7 then
+      raise exception 'Steps can only be logged up to 7 days back.'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
   -- Computed here rather than read from new.week_start. week_start is a
   -- GENERATED column and Postgres fills those in AFTER before-triggers run,
   -- so new.week_start is still null at this point -- comparing against it
