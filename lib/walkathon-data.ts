@@ -122,24 +122,51 @@ export async function listStepEntries(supabase: SupabaseClient, walkathonId: str
 }
 
 /**
- * Posts (or replaces) one step entry. Upserting on the natural key means
- * re-posting the same day or week corrects the number instead of erroring or
- * stacking a second row on top of the first.
+ * Posts one step entry, correcting the number if that day or week was already
+ * posted rather than stacking a second row on top.
+ *
+ * Done as look-then-write instead of upsert on purpose. The uniqueness rules
+ * are PARTIAL indexes (one per day where not covers_week, one per week where
+ * covers_week), and Postgres will not use a partial index for ON CONFLICT
+ * unless the statement repeats the index predicate -- which PostgREST gives no
+ * way to express. Upserting failed outright with "no unique or exclusion
+ * constraint matching the ON CONFLICT specification".
+ *
+ * The lookup matches covers_week as well as the date, so posting a weekly
+ * total for a week that already holds a daily entry falls through to the
+ * insert and is refused by the trigger. Matching on date alone would instead
+ * find that daily row and quietly rewrite it into a weekly one.
+ *
+ * The partial indexes still backstop a genuine race between two tabs; the
+ * loser sees the duplicate-key error rather than creating a second row.
  */
 export async function postStepEntry(
   supabase: SupabaseClient,
   input: { walkathonId: string; playerId: string; entryDate: string; coversWeek: boolean; steps: number }
 ) {
-  const row = {
+  const existing = await supabase
+    .from("walkathon_step_entries")
+    .select("id")
+    .eq("walkathon_id", input.walkathonId)
+    .eq("player_id", input.playerId)
+    .eq("entry_date", input.entryDate)
+    .eq("covers_week", input.coversWeek)
+    .maybeSingle();
+  if (existing.error) fail(existing.error, "Could not check for an existing entry.");
+
+  if (existing.data) {
+    const { error } = await supabase.from("walkathon_step_entries").update({ steps: input.steps }).eq("id", existing.data.id);
+    if (error) fail(error, "Could not update those steps.");
+    return;
+  }
+
+  const { error } = await supabase.from("walkathon_step_entries").insert({
     walkathon_id: input.walkathonId,
     player_id: input.playerId,
     entry_date: input.entryDate,
     covers_week: input.coversWeek,
     steps: input.steps
-  };
-  const { error } = await supabase
-    .from("walkathon_step_entries")
-    .upsert(row, { onConflict: input.coversWeek ? "walkathon_id,player_id,week_start" : "walkathon_id,player_id,entry_date" });
+  });
   if (error) fail(error, "Could not save those steps.");
 }
 
