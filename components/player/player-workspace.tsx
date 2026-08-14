@@ -32,6 +32,7 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
 import { TournamentLeaderboard } from "./tournament-leaderboard";
+import { WalkathonPanel } from "@/components/walkathon/walkathon-panel";
 import type { StandingRow } from "@/lib/admin-data";
 import type { MatchSet, Sport } from "@/lib/types";
 
@@ -53,7 +54,8 @@ export function PlayerWorkspace() {
   const [sportFilter, setSportFilter] = useState<Sport | "all">("all");
   const [tournamentFilter, setTournamentFilter] = useState<string>("all");
   const [divisionFilter, setDivisionFilter] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<"mine" | "all" | "points">("mine");
+  const [activeTab, setActiveTab] = useState<"mine" | "all" | "points" | "walkathon">("mine");
+  const [myPlayerIds, setMyPlayerIds] = useState<string[]>([]);
 
   useEffect(() => {
     void load();
@@ -93,6 +95,7 @@ export function PlayerWorkspace() {
       // to do with.
       const profiles = await listPlayerProfilesForUser(supabase, appUser.id);
       const profileIds = profiles.map((profile) => profile.id);
+      setMyPlayerIds(profileIds);
       const [directEntries, teamIds] = await Promise.all([listEntriesForPlayerIds(supabase, profileIds), listTeamIdsForPlayerIds(supabase, profileIds)]);
       const teamEntries = await listEntriesForTeamIds(supabase, teamIds);
       const myEntries = [...directEntries, ...teamEntries];
@@ -338,7 +341,8 @@ export function PlayerWorkspace() {
           options={[
             { value: "mine", label: "My Games" },
             { value: "all", label: "All Games" },
-            { value: "points", label: "Points" }
+            { value: "points", label: "Points" },
+            { value: "walkathon", label: "Walkathon" }
           ]}
           value={activeTab}
         />
@@ -433,6 +437,8 @@ export function PlayerWorkspace() {
             <PointsTable divisions={visibleDivisions} entries={entries} standings={standings} />
           </div>
         ) : null}
+
+        {activeTab === "walkathon" ? <WalkathonPanel myPlayerIds={myPlayerIds} players={allPlayers} supabase={supabase} /> : null}
       </section>
     </>
   );

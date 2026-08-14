@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, Settings, ShieldCheck, Trophy, Users } from "lucide-react";
+import { ClipboardList, Footprints, Settings, ShieldCheck, Trophy, Users } from "lucide-react";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { useAdminData } from "./use-admin-data";
 import { TournamentsPane } from "./tournaments-pane";
@@ -10,14 +10,16 @@ import { PeoplePane } from "./people-pane";
 import { MatchManagementPane } from "./match-management-pane";
 import { TeamsPane } from "./teams-pane";
 import { SettingsPane } from "./settings-pane";
+import { WalkathonPane } from "./walkathon-pane";
 
-type AdminSection = "tournaments" | "players" | "admin" | "teams" | "settings";
+type AdminSection = "tournaments" | "players" | "admin" | "teams" | "walkathon" | "settings";
 
 const SECTIONS: Array<{ id: AdminSection; label: string; title: string; description: string; icon: typeof Trophy }> = [
   { id: "tournaments", label: "Tournaments", title: "Tournaments & Schedules", description: "Create tournaments and build weekly schedules.", icon: Trophy },
   { id: "players", label: "People", title: "People", description: "Add players and admins, and manage login access.", icon: Users },
   { id: "admin", label: "Matches", title: "Match Management", description: "Review and correct every scheduled match.", icon: ClipboardList },
   { id: "teams", label: "Teams", title: "Teams", description: "Manage fixed doubles teams.", icon: ShieldCheck },
+  { id: "walkathon", label: "Walkathon", title: "Walkathon", description: "Register walkers and track step totals.", icon: Footprints },
   { id: "settings", label: "Settings", title: "Settings", description: "Club details and import configuration.", icon: Settings }
 ];
 
@@ -82,6 +84,7 @@ export function AdminWorkspace() {
           {activeSection === "players" ? <PeoplePane admin={admin} /> : null}
           {activeSection === "admin" ? <MatchManagementPane admin={admin} /> : null}
           {activeSection === "teams" ? <TeamsPane admin={admin} /> : null}
+          {activeSection === "walkathon" ? <WalkathonPane admin={admin} /> : null}
           {activeSection === "settings" ? <SettingsPane admin={admin} /> : null}
         </div>
       </div>
