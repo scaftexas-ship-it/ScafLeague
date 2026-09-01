@@ -65,13 +65,19 @@ export function MatchEditor({
   const [localMessage, setLocalMessage] = useState("");
 
   const today = todayIso();
-  const canScoreUpdate = canSubmitScoreInWindow(match, today, addDays);
+  // Shown as context, not enforced. This pane is admin-only, and correcting the
+  // record after the window has closed -- or after a match was auto-cancelled
+  // for going unplayed -- is exactly the job it exists to do. Players are still
+  // held to the window on their own card.
+  const pastWindow = !canSubmitScoreInWindow(match, today, addDays);
 
   // Scores belong on any match that could still be played, not just one an
   // admin has already flipped to "completed" by hand. Hiding the grid behind
   // that dropdown meant opening a scheduled match showed nothing but dates --
-  // there was no visible way to add a score at all.
-  const scoreEntryApplies = status === "scheduled" || status === "score_submitted" || status === "completed";
+  // there was no visible way to add a score at all. Cancelled is included
+  // because a game called off and then played anyway still needs its result.
+  const scoreEntryApplies =
+    status === "scheduled" || status === "score_submitted" || status === "completed" || status === "cancelled";
   const hasEnteredScores = buildSetsFromForm(scoreForm).length > 0;
 
   async function handleSave() {
@@ -101,7 +107,8 @@ export function MatchEditor({
     // Typing a score into a scheduled match is how an admin records a result;
     // making them also remember to change the status dropdown just invites a
     // finished match that still reads "scheduled".
-    const effectiveStatus: MatchStatus = status === "scheduled" && hasEnteredScores ? "completed" : status;
+    const effectiveStatus: MatchStatus =
+      (status === "scheduled" || status === "cancelled") && hasEnteredScores ? "completed" : status;
 
     const patch: MatchEditPatch = {
       round_label: roundLabel.trim() || null,
@@ -118,10 +125,6 @@ export function MatchEditor({
     let nextSets: ReturnType<typeof buildSetsFromForm> = [];
 
     if (effectiveStatus === "completed" || effectiveStatus === "score_submitted") {
-      if (!canScoreUpdate) {
-        setLocalMessage("Score updates are outside the allowed schedule window for this match. Adjust the schedule dates above to allow it.");
-        return;
-      }
       nextSets = buildSetsFromForm(scoreForm);
       const result = validateMatchSets(nextSets, {
         entryAId: match.entry_a_id,
@@ -225,25 +228,28 @@ export function MatchEditor({
           </div>
 
           {scoreEntryApplies ? (
-            !canScoreUpdate ? (
-              <p className="subtle">Score updates are outside the allowed schedule window for this match. Adjust the schedule dates above to allow it.</p>
-            ) : (
-              <>
-                <div className="spread">
-                  <strong>{sets.length > 0 ? "Score" : "Add score"}</strong>
-                  {status === "scheduled" ? <span className="subtle">Entering a score marks this match completed.</span> : null}
-                </div>
-                <ScoreGrid
-                  aLabel={entryA?.label || "A"}
-                  bLabel={entryB?.label || "B"}
-                  numberOfSets={match.number_of_sets}
-                  scoreForm={scoreForm}
-                  setScoreForm={setScoreForm}
-                  sport={sport}
-                  targetScore={Number(targetScore) || match.target_score}
-                />
-              </>
-            )
+            <>
+              {pastWindow ? (
+                <p className="subtle">
+                  This match is past its schedule window. As an admin you can still record the result.
+                </p>
+              ) : null}
+              <div className="spread">
+                <strong>{sets.length > 0 ? "Score" : "Add score"}</strong>
+                {status === "scheduled" || status === "cancelled" ? (
+                  <span className="subtle">Entering a score marks this match completed.</span>
+                ) : null}
+              </div>
+              <ScoreGrid
+                aLabel={entryA?.label || "A"}
+                bLabel={entryB?.label || "B"}
+                numberOfSets={match.number_of_sets}
+                scoreForm={scoreForm}
+                setScoreForm={setScoreForm}
+                sport={sport}
+                targetScore={Number(targetScore) || match.target_score}
+              />
+            </>
           ) : null}
 
           {status === "forfeit" ? (
@@ -271,7 +277,7 @@ export function MatchEditor({
 
           <button
             className="button"
-            disabled={saving || (scoreEntryApplies && status !== "scheduled" && !canScoreUpdate)}
+            disabled={saving}
             onClick={handleSave}
             type="button"
           >

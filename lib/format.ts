@@ -38,8 +38,29 @@ export function normalizePhone(value: string | null | undefined) {
   return digits;
 }
 
+/**
+ * The league runs on US Central time, so every date decision is made there --
+ * not in UTC and not in whatever zone the viewer's device happens to be set to.
+ *
+ * toISOString() gave the UTC date, which rolls over at 7pm Central in summer
+ * and 6pm in winter. An evening match was told its window had closed hours
+ * before the day was actually over, and the nightly expiry job cancelled games
+ * on the same early clock.
+ *
+ * Named as a zone rather than a fixed -6 offset on purpose: America/Chicago
+ * moves between CST and CDT by itself, where a hardcoded offset would be wrong
+ * for eight months of the year.
+ */
+export const LEAGUE_TIME_ZONE = "America/Chicago";
+
 export function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  // en-CA formats as YYYY-MM-DD, which is exactly the ISO date shape.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: LEAGUE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
 }
 
 /** Joins first/last name into the single display_name string every player is stored and shown as. */

@@ -37,7 +37,7 @@ begin
   update public.matches
      set status = 'cancelled'
    where status in ('scheduled', 'score_submitted')
-     and extension_week_end < (now() at time zone 'utc')::date;
+     and extension_week_end < (now() at time zone 'America/Chicago')::date;
 
   get diagnostics cancelled_count = row_count;
   return cancelled_count;
