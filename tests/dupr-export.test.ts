@@ -24,9 +24,13 @@ function set(matchId: string, n: number, a: number, b: number): MatchSetRow {
 }
 
 test("the headers match the templates DUPR supplied, byte for byte", () => {
-  const strip = (s: string) => s.replace(/^﻿/, "").split(/\r?\n/)[0].trim();
-  assert.equal(DUPR_SINGLES_HEADER, strip(fs.readFileSync("/Users/gopinidjelli/Downloads/Singles DUPR Upload.csv", "utf8")));
-  assert.equal(DUPR_DOUBLES_HEADER, strip(fs.readFileSync("/Users/gopinidjelli/Downloads/Dobules DUPR Upload.csv", "utf8")));
+  // Checked against copies of the real templates committed under fixtures --
+  // reading them from a Downloads folder passed locally and failed in CI,
+  // where that folder does not exist.
+  const header = (file: string) =>
+    fs.readFileSync(new URL(`./fixtures/${file}`, import.meta.url), "utf8").replace(/^\uFEFF/, "").split(/\r?\n/)[0].trim();
+  assert.equal(DUPR_SINGLES_HEADER, header("dupr-singles-template.csv"));
+  assert.equal(DUPR_DOUBLES_HEADER, header("dupr-doubles-template.csv"));
 });
 
 test("a DUPR id is six alphanumerics -- a rating or a placeholder is not one", () => {
