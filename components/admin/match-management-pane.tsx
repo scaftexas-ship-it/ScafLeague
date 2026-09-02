@@ -12,8 +12,9 @@ import { MatchEditor } from "./match-editor";
 import type { MatchEditPatch } from "./match-editor";
 import type { MatchRow } from "@/lib/admin-data";
 import { RosterPane } from "./roster-pane";
+import { DuprExportPane } from "./dupr-export-pane";
 
-type MatchesTab = "roster" | "matches";
+type MatchesTab = "roster" | "matches" | "dupr";
 
 /**
  * Postgres reports the matches table's date checks by constraint name, e.g.
@@ -131,12 +132,14 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
         onChange={setActiveTab}
         options={[
           { value: "roster", label: "Substitutions" },
-          { value: "matches", label: "Match Management" }
+          { value: "matches", label: "Match Management" },
+          { value: "dupr", label: "DUPR Export" }
         ]}
         value={activeTab}
       />
 
       {activeTab === "roster" ? <RosterPane admin={admin} /> : null}
+      {activeTab === "dupr" ? <DuprExportPane admin={admin} /> : null}
 
       {activeTab === "matches" ? (
       <div className="card stack">
