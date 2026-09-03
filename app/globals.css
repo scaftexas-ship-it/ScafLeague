@@ -1557,3 +1557,14 @@ button {
 .points-table tr[data-me="true"] td {
   font-weight: 700;
 }
+
+.rating-cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.rating-cell strong {
+  font-variant-numeric: tabular-nums;
+}

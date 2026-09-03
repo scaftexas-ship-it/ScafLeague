@@ -13,8 +13,9 @@ import type { MatchEditPatch } from "./match-editor";
 import type { MatchRow } from "@/lib/admin-data";
 import { RosterPane } from "./roster-pane";
 import { DuprExportPane } from "./dupr-export-pane";
+import { RatingPanel } from "@/components/pickleball/rating-panel";
 
-type MatchesTab = "roster" | "matches" | "dupr";
+type MatchesTab = "roster" | "matches" | "dupr" | "ratings";
 
 /**
  * Postgres reports the matches table's date checks by constraint name, e.g.
@@ -133,13 +134,17 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
         options={[
           { value: "roster", label: "Substitutions" },
           { value: "matches", label: "Match Management" },
-          { value: "dupr", label: "DUPR Export" }
+          { value: "dupr", label: "DUPR Export" },
+          { value: "ratings", label: "Ratings" }
         ]}
         value={activeTab}
       />
 
       {activeTab === "roster" ? <RosterPane admin={admin} /> : null}
       {activeTab === "dupr" ? <DuprExportPane admin={admin} /> : null}
+      {activeTab === "ratings" && admin.adminUser ? (
+        <RatingPanel clubId={admin.adminUser.club_id} players={admin.players} supabase={admin.supabase} />
+      ) : null}
 
       {activeTab === "matches" ? (
       <div className="card stack">

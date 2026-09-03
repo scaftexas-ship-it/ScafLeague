@@ -33,6 +33,7 @@ import { MatchCard } from "./match-card";
 import { PointsTable } from "./points-table";
 import { TournamentLeaderboard } from "./tournament-leaderboard";
 import { WalkathonPanel } from "@/components/walkathon/walkathon-panel";
+import { RatingPanel } from "@/components/pickleball/rating-panel";
 import type { StandingRow } from "@/lib/admin-data";
 import type { MatchSet, Sport } from "@/lib/types";
 
@@ -54,8 +55,9 @@ export function PlayerWorkspace() {
   const [sportFilter, setSportFilter] = useState<Sport | "all">("all");
   const [tournamentFilter, setTournamentFilter] = useState<string>("all");
   const [divisionFilter, setDivisionFilter] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<"mine" | "all" | "points" | "walkathon">("mine");
+  const [activeTab, setActiveTab] = useState<"mine" | "all" | "points" | "ratings" | "walkathon">("mine");
   const [myPlayerIds, setMyPlayerIds] = useState<string[]>([]);
+  const [clubId, setClubId] = useState("");
 
   useEffect(() => {
     void load();
@@ -96,6 +98,7 @@ export function PlayerWorkspace() {
       const profiles = await listPlayerProfilesForUser(supabase, appUser.id);
       const profileIds = profiles.map((profile) => profile.id);
       setMyPlayerIds(profileIds);
+      setClubId(appUser.club_id);
       const [directEntries, teamIds] = await Promise.all([listEntriesForPlayerIds(supabase, profileIds), listTeamIdsForPlayerIds(supabase, profileIds)]);
       const teamEntries = await listEntriesForTeamIds(supabase, teamIds);
       const myEntries = [...directEntries, ...teamEntries];
@@ -342,6 +345,7 @@ export function PlayerWorkspace() {
             { value: "mine", label: "My Games" },
             { value: "all", label: "All Games" },
             { value: "points", label: "Points" },
+            { value: "ratings", label: "Ratings" },
             { value: "walkathon", label: "Walkathon" }
           ]}
           value={activeTab}
@@ -436,6 +440,10 @@ export function PlayerWorkspace() {
             ) : null}
             <PointsTable divisions={visibleDivisions} entries={entries} standings={standings} />
           </div>
+        ) : null}
+
+        {activeTab === "ratings" && clubId ? (
+          <RatingPanel clubId={clubId} highlightPlayerIds={myPlayerIds} players={allPlayers} supabase={supabase} />
         ) : null}
 
         {activeTab === "walkathon" ? <WalkathonPanel myPlayerIds={myPlayerIds} players={allPlayers} supabase={supabase} /> : null}
