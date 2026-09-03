@@ -34,12 +34,27 @@ export const START_RATING = 3.5;
 export const MIN_RATING = 2;
 export const MAX_RATING = 8;
 
-/** Rating gap at which the stronger side is expected to take ~91% of the points. */
-const GAP_SCALE = 1;
+/**
+ * How much of an edge a rating gap implies. At 3.5, being a full point above
+ * someone means taking about 66% of the points off them, and two points above
+ * about 79% -- roughly how pickleball actually plays out.
+ *
+ * This started at 1, which claimed a one-point gap was worth 91% of the
+ * points. Expectations saturated almost immediately, so once a good player
+ * edged ahead their wins were "already predicted" and stopped paying: five
+ * straight wins ranked below someone else's three, and the whole field stayed
+ * bunched within a point of each other.
+ */
+const GAP_SCALE = 3.5;
 
-/** How far one match can move a rating, before and after it settles. */
-const K_PROVISIONAL = 0.32;
-const K_SETTLED = 0.16;
+/**
+ * How far one match can move a rating, before and after it settles. Chosen
+ * against this club's real results: enough that a season separates the field
+ * by about 1.6 rating points, while a settled player still moves at most
+ * ~0.2 in any single match, so one bad night cannot undo a season.
+ */
+const K_PROVISIONAL = 0.5;
+const K_SETTLED = 0.28;
 
 /** Below this many matches a rating is shown as provisional rather than trusted. */
 export const PROVISIONAL_MATCHES = 5;

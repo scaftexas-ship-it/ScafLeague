@@ -43,13 +43,32 @@ function input(ms: MatchRow[], ss: MatchSetRow[]): RatingInput {
   return { matches: ms, matchSets: ss, entries, teamMembers };
 }
 
-test("everyone starts level, so an even match barely moves anyone", () => {
+test("winning lifts you and losing drops you, and the two are mirrored", () => {
   const m = match("eA", "eB");
   const r = calculateRatings("singles", input([m], sets(m.id, [[11, 9], [9, 11], [11, 9]])));
-  // A won, so A is up and B is down, but a three-game squeaker is a small move.
   assert.ok(r.get("pA")!.rating > START_RATING);
   assert.ok(r.get("pB")!.rating < START_RATING);
-  assert.ok(r.get("pA")!.rating - START_RATING < 0.1, "a close win is a small move");
+  // Between two equals, what the winner gains the loser gives up.
+  const gain = r.get("pA")!.rating - START_RATING;
+  const drop = START_RATING - r.get("pB")!.rating;
+  assert.ok(Math.abs(gain - drop) < 1e-9, "a level match moves both sides equally");
+});
+
+test("a settled player cannot be swung too far by one night", () => {
+  // Past the provisional window, so the smaller step applies. Even a total
+  // whitewash by a much stronger opponent should stay a correction, not a
+  // collapse -- a season of evidence outweighs one match.
+  const warmUp = Array.from({ length: 6 }, () => match("eA", "eB"));
+  const shock = match("eC", "eA");
+  const all = [...warmUp, shock];
+  const r = calculateRatings(
+    "singles",
+    input(all, [...warmUp.flatMap((m) => sets(m.id, [[11, 8], [11, 8]])), ...sets(shock.id, [[11, 0], [11, 0]])])
+  );
+  const beforeShock = calculateRatings("singles", input(warmUp, warmUp.flatMap((m) => sets(m.id, [[11, 8], [11, 8]])))).get("pA")!.rating;
+  const afterShock = r.get("pA")!.rating;
+  assert.ok(afterShock < beforeShock, "the loss costs something");
+  assert.ok(beforeShock - afterShock < 0.3, `one match moved a settled rating by ${beforeShock - afterShock}`);
 });
 
 test("the margin matters, not just the win", () => {
@@ -144,12 +163,37 @@ test("the same results always give the same numbers, whatever order they arrive 
   }
 });
 
-test("expected share follows the rating gap", () => {
-  assert.equal(expectedShare(4, 4), 0.5);
-  assert.ok(expectedShare(5, 4) > 0.9, "a full point of rating is a heavy favourite");
-  assert.ok(expectedShare(3, 4) < 0.1);
+test("expected share follows the rating gap, at a believable rate", () => {
+  assert.equal(expectedShare(4, 4), 0.5, "equals split the points");
+
+  // A point of rating is a clear edge, not a foregone conclusion: about two
+  // points in three. An earlier scale claimed 91%, which made expectations
+  // saturate so fast that ratings stopped moving and the field stayed bunched.
+  const onePoint = expectedShare(5, 4);
+  assert.ok(onePoint > 0.6 && onePoint < 0.72, `one point of rating -> ${onePoint}`);
+
+  const twoPoints = expectedShare(6, 4);
+  assert.ok(twoPoints > 0.75 && twoPoints < 0.85, `two points of rating -> ${twoPoints}`);
+
+  // Symmetric: what one side is expected to take, the other is expected to concede.
+  assert.ok(Math.abs(expectedShare(3, 4) - (1 - expectedShare(4, 3))) < 1e-9);
+
   assert.equal(formatRating(3.5), "3.500");
   assert.equal(formatRating(undefined), "-");
+});
+
+test("more evidence outranks a hot start", () => {
+  // Five straight wins should sit above three straight wins. Under the old
+  // saturating scale it did not: the fifth win was worth almost nothing, so a
+  // 3-0 player outranked a 5-0 one.
+  const fiveOh = Array.from({ length: 5 }, () => match("eA", "eB"));
+  const threeOh = Array.from({ length: 3 }, () => match("eC", "eB"));
+  const all = [...fiveOh, ...threeOh];
+  const r = calculateRatings(
+    "singles",
+    input(all, all.flatMap((m) => sets(m.id, [[11, 6], [11, 6]])))
+  );
+  assert.ok(r.get("pA")!.rating > r.get("pC")!.rating, "5-0 should outrank 3-0 on identical scorelines");
 });
 
 test("rows list each player's two ratings, best first", () => {
