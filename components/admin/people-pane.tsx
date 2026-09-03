@@ -1,17 +1,35 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Ban, CheckCircle2, Pencil, Search, Users } from "lucide-react";
 import { addPlayer, deletePlayer, deleteUserLogin as deleteUserLoginRpc, isPlayerInUse, linkUserToPlayer, toggleUserAccess, updatePlayer, updateUserRole } from "@/lib/admin-data";
 import type { PlayerProfileRow } from "@/lib/admin-data";
 import { isServiceRoleMissingError, parsePeopleImportFile, PeopleImportError } from "@/lib/people-import";
 import { combineName, splitName } from "@/lib/format";
 import type { UserRole } from "@/lib/types";
+import { loadPickleballRatingInput } from "@/lib/pickleball-rating-data";
+import { calculateRatings, formatRating } from "@/lib/pickleball-rating";
+import type { PlayerRating, RatingInput } from "@/lib/pickleball-rating";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "./use-admin-data";
+
+/**
+ * A player's computed pickleball rating. Read-only wherever it appears: it is
+ * derived from results, so there is nothing here to type over -- unlike the
+ * Rating and DUPR columns beside it, which an admin fills in by hand.
+ */
+function ClubRatingCell({ rating }: { rating?: PlayerRating }) {
+  if (!rating) return <span className="subtle">&mdash;</span>;
+  return (
+    <span className="rating-cell">
+      <strong>{formatRating(rating.rating)}</strong>
+      {rating.provisional ? <span className="pill">prov</span> : null}
+    </span>
+  );
+}
 
 type PlayerProfileMode = "__new" | "" | string;
 type PeopleTab = "add" | "upload" | "access" | "players";
@@ -59,6 +77,7 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
   const [accessMessage, setAccessMessage] = useState("");
 
   const [playersMessage, setPlayersMessage] = useState("");
+  const [ratingInput, setRatingInput] = useState<RatingInput | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState("");
   const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
   const [editMessage, setEditMessage] = useState("");
@@ -415,6 +434,29 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
   // below so the form describes what will actually happen.
   const selfSignupOnly = admin.serviceRoleConfigured === false;
   const playerLoginUsers = admin.appUsers.filter((user) => user.role === "player");
+  // Club pickleball ratings, worked out from results rather than stored, so the
+  // profile always shows what the current scores say.
+  useEffect(() => {
+    if (!admin.supabase || !admin.adminUser?.club_id) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const loaded = await loadPickleballRatingInput(admin.supabase!, admin.adminUser!.club_id);
+        if (!cancelled) setRatingInput(loaded);
+      } catch {
+        // A rating is extra detail on this screen; failing to load one should
+        // not take the whole player list down with it.
+        if (!cancelled) setRatingInput(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [admin.supabase, admin.adminUser?.club_id]);
+
+  const singlesRatings = useMemo(() => (ratingInput ? calculateRatings("singles", ratingInput) : null), [ratingInput]);
+  const doublesRatings = useMemo(() => (ratingInput ? calculateRatings("doubles", ratingInput) : null), [ratingInput]);
+
   const filteredPlayers = admin.players.filter((player) => {
     const query = playerSearch.trim().toLowerCase();
     if (!query) return true;
@@ -702,6 +744,10 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
           </div>
         </label>
         <StatusBanner message={playersMessage} />
+        <p className="subtle">
+          <strong>Rating</strong> and <strong>DUPR</strong> are what you enter. <strong>Singles</strong> and <strong>Doubles</strong> are the club
+          pickleball ratings, worked out from posted results &mdash; &quot;prov&quot; means provisional, on fewer than five matches.
+        </p>
         {admin.players.length > 0 ? (
           filteredPlayers.length > 0 ? (
           <div className="data-table-wrap">
@@ -712,6 +758,8 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                   <th>Email</th>
                   <th>Rating</th>
                   <th>DUPR</th>
+                  <th>Singles</th>
+                  <th>Doubles</th>
                   <th>Mobile</th>
                   <th>Linked login</th>
                   <th></th>
@@ -754,6 +802,12 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                           />
                         </td>
                         <td>
+                          <ClubRatingCell rating={singlesRatings?.get(player.id)} />
+                        </td>
+                        <td>
+                          <ClubRatingCell rating={doublesRatings?.get(player.id)} />
+                        </td>
+                        <td>
                           <input
                             inputMode="tel"
                             onChange={(event) => setEditForm((current) => ({ ...current, mobileNumber: event.target.value }))}
@@ -784,6 +838,12 @@ export function PeoplePane({ admin }: { admin: AdminData }) {
                       <td>{player.email || <span className="subtle">—</span>}</td>
                       <td>{player.rating || <span className="subtle">—</span>}</td>
                       <td>{player.dupr_rating || <span className="subtle">—</span>}</td>
+                      <td>
+                        <ClubRatingCell rating={singlesRatings?.get(player.id)} />
+                      </td>
+                      <td>
+                        <ClubRatingCell rating={doublesRatings?.get(player.id)} />
+                      </td>
                       <td>{player.mobile_number || <span className="subtle">—</span>}</td>
                       <td>
                         {linkedUser ? (
