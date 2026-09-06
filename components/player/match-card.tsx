@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarDays, Check, Send } from "lucide-react";
+import { CalendarDays, Check, Send, Trophy } from "lucide-react";
 import { addDays, canClaimForfeit } from "@/lib/league-rules";
 import { buildSetsFromForm, canSubmitScoreInWindow, emptySetScoreForm, getForfeitUnavailableReason, toDomainMatch } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
@@ -74,6 +74,15 @@ export function MatchCard({
   const opponentPlayers = getEntryPlayers(opponentEntry, players, teamMembers);
   const canOpenResult = canEdit || canForfeit || canForfeitForEntryA || canForfeitForEntryB;
   const winnerForForfeit = isAdminPreview ? forfeitWinnerId : playerEntryId;
+  // Only meaningful once there is a result and we know which side is theirs --
+  // an admin previewing someone else's match has no "you" in it.
+  const myResult =
+    playerEntryId && match.winner_entry_id && (match.status === "completed" || match.status === "score_submitted" || match.status === "forfeit")
+      ? match.winner_entry_id === playerEntryId
+        ? "won"
+        : "lost"
+      : null;
+
   const canSaveForfeit = isAdminPreview
     ? (winnerForForfeit === match.entry_a_id && canForfeitForEntryA) || (winnerForForfeit === match.entry_b_id && canForfeitForEntryB)
     : canForfeit;
@@ -133,6 +142,12 @@ export function MatchCard({
                   : `${opponentEntry?.label || "Your opponent"} hosts this one`
                 : null}
             </small>
+            {myResult ? (
+              <span className="my-result" data-outcome={myResult}>
+                {myResult === "won" ? <Trophy size={15} aria-hidden /> : null}
+                {myResult === "won" ? "You won" : "You lost"}
+              </span>
+            ) : null}
             <MatchScore
               sets={matchSets}
               status={match.status}

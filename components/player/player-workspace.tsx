@@ -405,7 +405,7 @@ export function PlayerWorkspace() {
                         <span className="pill">{match.round_label || `Round ${match.round}`}</span>
                         <span className="pill">To {match.target_score}</span>
                       </div>
-                      <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
+                      <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} winnerSide={match.winner_entry_id === match.entry_a_id ? "home" : match.winner_entry_id === match.entry_b_id ? "away" : undefined} />
                       <MatchScore
                         sets={matchSets.filter((set) => set.match_id === match.id)}
                         status={match.status}

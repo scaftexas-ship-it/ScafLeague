@@ -1568,3 +1568,49 @@ button {
 .rating-cell strong {
   font-variant-numeric: tabular-nums;
 }
+
+/* Winner / loser on a finished match. The signal is weight and a trophy, not
+   hue -- green and purple already mean Home and Away on this very line. */
+.versus-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.versus-name svg {
+  flex: none;
+  color: #8a6d00;
+}
+
+.versus-side[data-outcome="won"] .versus-name {
+  font-weight: 800;
+}
+
+.versus-side[data-outcome="lost"] .versus-name {
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* On your own card the question is "did I win", so it is answered in words
+   rather than left to be read off the scoreline. */
+.my-result {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.my-result[data-outcome="won"] {
+  background: var(--color-success-soft);
+  color: #0f5132;
+}
+
+.my-result[data-outcome="lost"] {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}

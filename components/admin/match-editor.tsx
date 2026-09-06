@@ -158,7 +158,7 @@ export function MatchEditor({
         <span className="pill">{match.round_label || `Round ${match.round}`}</span>
         <StatusPill status={match.status} />
       </div>
-      <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} />
+      <Versus awayLabel={entryB?.label} homeLabel={entryA?.label} winnerSide={match.winner_entry_id === match.entry_a_id ? "home" : match.winner_entry_id === match.entry_b_id ? "away" : undefined} />
       <MatchScore
         sets={sets}
         status={match.status}
