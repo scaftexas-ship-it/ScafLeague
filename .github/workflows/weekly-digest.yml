@@ -1,0 +1,43 @@
+name: Weekly points email
+
+on:
+  schedule:
+    # 13:30 UTC Monday = 8:30am Central in summer, 7:30am in winter.
+    - cron: "30 13 * * 1"
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "Actually send? Leave false to preview without emailing anyone."
+        type: boolean
+        default: false
+      only_email:
+        description: "Send to this one address only (for a live test)."
+        type: string
+        default: ""
+
+# Never let two runs overlap -- a slow run must not be joined by the next
+# week's, or somebody gets the email twice.
+concurrency:
+  group: weekly-digest
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Build and send
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DIGEST_FROM: ${{ vars.DIGEST_FROM }}
+          # A scheduled run sends. A manual run only sends if you ask it to.
+          SEND: ${{ github.event_name == 'schedule' && 'true' || inputs.send }}
+          ONLY_EMAIL: ${{ inputs.only_email }}
+        run: node --experimental-strip-types scripts/send-weekly-digest.mjs

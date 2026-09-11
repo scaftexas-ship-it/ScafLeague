@@ -34,6 +34,7 @@ import { PointsTable } from "./points-table";
 import { TournamentLeaderboard } from "./tournament-leaderboard";
 import { WalkathonPanel } from "@/components/walkathon/walkathon-panel";
 import { RatingPanel } from "@/components/pickleball/rating-panel";
+import { EmailPreference } from "./email-preference";
 import type { StandingRow } from "@/lib/admin-data";
 import type { MatchSet, Sport } from "@/lib/types";
 import { sportLabel } from "@/lib/types";
@@ -448,6 +449,8 @@ export function PlayerWorkspace() {
         ) : null}
 
         {activeTab === "walkathon" ? <WalkathonPanel myPlayerIds={myPlayerIds} players={allPlayers} supabase={supabase} /> : null}
+
+        {myPlayerIds.length > 0 ? <EmailPreference playerId={myPlayerIds[0]} supabase={supabase} /> : null}
       </section>
     </>
   );

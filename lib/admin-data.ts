@@ -49,6 +49,8 @@ export type PlayerProfileRow = {
   mobile_number: string | null;
   rating: string | null;
   dupr_rating: string | null;
+  /** Absent until add-weekly-email-preference.sql has been run; treated as opted in. */
+  weekly_email_enabled?: boolean;
 };
 
 export type AppUserRow = {
@@ -768,6 +770,18 @@ export type StandingRow = {
  * leaderboard fail outright until that migration is run. Missing columns just
  * default to zero, which shows the rating as "-" instead of breaking the page.
  */
+/**
+ * Turns the weekly points email on or off for one player.
+ *
+ * Allowed by the existing "players update own profile" policy, which is keyed
+ * on user_id = auth.uid() -- so a player can only ever change their own, and
+ * there is nothing extra to enforce here.
+ */
+export async function setWeeklyEmailEnabled(supabase: SupabaseClient, playerId: string, enabled: boolean) {
+  const { error } = await supabase.from("player_profiles").update({ weekly_email_enabled: enabled }).eq("id", playerId);
+  if (error) fail(error, "Could not save your email preference.");
+}
+
 export async function listStandings(supabase: SupabaseClient, divisionIds: string[]) {
   if (divisionIds.length === 0) return [] as StandingRow[];
   const { data, error } = await supabase.from("standings").select("*").in("division_id", divisionIds);
