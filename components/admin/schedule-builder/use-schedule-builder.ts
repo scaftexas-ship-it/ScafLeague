@@ -12,6 +12,9 @@ function defaultTargetScore(sport: Sport | undefined) {
       return "21";
     case "volleyball":
       return "25";
+    // Ping pong and pickleball are both first to 11, win by 2.
+    case "ping_pong":
+    case "pickleball":
     default:
       return "11";
   }

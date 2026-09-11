@@ -110,6 +110,9 @@ export function isValidCompletedSet(entryAScore: number, entryBScore: number, ta
     return winner >= targetScore && winner - loser >= 2;
   }
 
+  // Pickleball, volleyball and ping pong all share this: reach the target and
+  // lead by two, with deuce running as long as it needs to. Badminton is the
+  // odd one out above because it caps at target + 9.
   return winner >= targetScore && winner - loser >= 2;
 }
 

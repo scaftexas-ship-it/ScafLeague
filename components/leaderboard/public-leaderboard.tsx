@@ -7,6 +7,7 @@ import { getTournament, listDivisionEntries, listDivisions, listStandings } from
 import type { DivisionEntryRow, DivisionRow, StandingRow, TournamentRow } from "@/lib/admin-data";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { TournamentLeaderboard } from "@/components/player/tournament-leaderboard";
+import { sportLabel } from "@/lib/types";
 
 export function PublicLeaderboard() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -64,7 +65,7 @@ export function PublicLeaderboard() {
         <div>
           <p className="eyebrow">Public leaderboard</p>
           <h1>{tournament?.name || "Tournament leaderboard"}</h1>
-          {tournament ? <p className="hero-copy">{tournament.sport[0].toUpperCase() + tournament.sport.slice(1)}</p> : null}
+          {tournament ? <p className="hero-copy">{sportLabel(tournament.sport)}</p> : null}
           <StatusBanner message={message} />
         </div>
         {tournament?.logo_url ? <img alt="" className="leaderboard-logo" src={tournament.logo_url} /> : null}

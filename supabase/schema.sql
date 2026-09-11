@@ -9,7 +9,7 @@
 create extension if not exists pgcrypto;
 
 create type public.user_role as enum ('admin', 'player');
-create type public.sport_type as enum ('pickleball', 'badminton', 'tennis', 'volleyball');
+create type public.sport_type as enum ('pickleball', 'badminton', 'tennis', 'volleyball', 'ping_pong');
 create type public.division_format as enum ('singles', 'doubles');
 create type public.registration_status as enum ('pending', 'approved', 'declined');
 create type public.match_status as enum ('scheduled', 'score_submitted', 'completed', 'forfeit', 'cancelled');

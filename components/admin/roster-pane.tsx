@@ -7,6 +7,7 @@ import type { DivisionEntryRow, MatchRow } from "@/lib/admin-data";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { Sport } from "@/lib/types";
+import { sportLabel } from "@/lib/types";
 import type { AdminData } from "./use-admin-data";
 
 /**
@@ -232,7 +233,7 @@ export function RosterPane({ admin }: { admin: AdminData }) {
             <option value="all">All sports</option>
             {availableSports.map((sport) => (
               <option key={sport} value={sport}>
-                {sport[0].toUpperCase() + sport.slice(1)}
+                {sportLabel(sport)}
               </option>
             ))}
           </select>

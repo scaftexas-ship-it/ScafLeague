@@ -36,6 +36,7 @@ import { WalkathonPanel } from "@/components/walkathon/walkathon-panel";
 import { RatingPanel } from "@/components/pickleball/rating-panel";
 import type { StandingRow } from "@/lib/admin-data";
 import type { MatchSet, Sport } from "@/lib/types";
+import { sportLabel } from "@/lib/types";
 
 export function PlayerWorkspace() {
   const router = useRouter();
@@ -303,7 +304,7 @@ export function PlayerWorkspace() {
                 <option value="all">All sports</option>
                 {availableSports.map((sport) => (
                   <option key={sport} value={sport}>
-                    {sport[0].toUpperCase() + sport.slice(1)}
+                    {sportLabel(sport)}
                   </option>
                 ))}
               </select>

@@ -1,4 +1,29 @@
-export type Sport = "pickleball" | "badminton" | "tennis" | "volleyball";
+export type Sport = "pickleball" | "badminton" | "tennis" | "volleyball" | "ping_pong";
+
+/**
+ * Every sport the club runs, in the order they appear in menus. Kept here so
+ * adding one is a single edit rather than a hunt through each pane's own copy.
+ * Must stay in step with the sport_type enum in Postgres -- see
+ * supabase/add-ping-pong.sql.
+ */
+export const SPORTS: Sport[] = ["pickleball", "badminton", "tennis", "volleyball", "ping_pong"];
+
+/**
+ * What each sport is called on screen. Four places used to capitalise the
+ * stored value directly, which works only while every sport is one lowercase
+ * word -- "ping_pong" would have shown up as "Ping_pong".
+ */
+const SPORT_LABELS: Record<Sport, string> = {
+  pickleball: "Pickleball",
+  badminton: "Badminton",
+  tennis: "Tennis",
+  volleyball: "Volleyball",
+  ping_pong: "Ping Pong"
+};
+
+export function sportLabel(sport: Sport) {
+  return SPORT_LABELS[sport] || sport;
+}
 export type DivisionFormat = "singles" | "doubles";
 export type UserRole = "admin" | "player";
 export type MatchStatus = "scheduled" | "score_submitted" | "completed" | "forfeit" | "cancelled";

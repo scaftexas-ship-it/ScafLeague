@@ -5,13 +5,13 @@ import { Link2 } from "lucide-react";
 import { createTournament, deleteTournament, updateClubScoringRules, updateTournament, uploadTournamentLogo } from "@/lib/admin-data";
 import { SCORING_RULES } from "@/lib/types";
 import type { Sport } from "@/lib/types";
+import { SPORTS, sportLabel } from "@/lib/types";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { StatusBanner } from "@/components/ui/status-banner";
 import type { AdminData } from "./use-admin-data";
 import { ScheduleBuilderPane } from "./schedule-builder/schedule-builder-pane";
 
 const today = new Date().toISOString().slice(0, 10);
-const SPORTS: Sport[] = ["pickleball", "badminton", "tennis", "volleyball"];
 
 export function TournamentsPane({ admin }: { admin: AdminData }) {
   const [form, setForm] = useState({ name: "", sport: "pickleball" as Sport, startDate: today, endDate: today });
@@ -193,7 +193,7 @@ export function TournamentsPane({ admin }: { admin: AdminData }) {
             <select onChange={(event) => setForm((current) => ({ ...current, sport: event.target.value as Sport }))} value={form.sport}>
               {SPORTS.map((sport) => (
                 <option key={sport} value={sport}>
-                  {sport[0].toUpperCase() + sport.slice(1)}
+                  {sportLabel(sport)}
                 </option>
               ))}
             </select>
