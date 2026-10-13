@@ -437,3 +437,39 @@ test("points still outrank the games rating, which only breaks ties", () => {
   const order = calculateStandings(pair, matches).map((s) => s.entryId);
   assert.deepEqual(order, ["b", "a", "c"]);
 });
+
+test("a knockout round gets no extension week, unlike round robin", () => {
+  const bracket = generateEliminatorSchedule({
+    divisionId: "d-1",
+    entries,
+    startDate: "2026-10-05",
+    endDate: "2026-12-01"
+  });
+  assert.ok(bracket.length > 0);
+
+  for (const match of bracket) {
+    assert.equal(match.scheduleWeekStart, "2026-10-05");
+    assert.equal(match.scheduleWeekEnd, "2026-10-11", "the round still has its own week");
+    // The nearest the matches table allows to "no extension": the single day
+    // after, not the week that round robin gets.
+    assert.equal(match.extensionWeekStart, "2026-10-12");
+    assert.equal(match.extensionWeekEnd, "2026-10-12");
+    // And it must still satisfy matches_check2, or the insert is rejected.
+    assert.ok(match.extensionWeekStart > match.scheduleWeekEnd, "extension starts after the schedule week");
+    assert.ok(match.extensionWeekEnd >= match.extensionWeekStart);
+  }
+});
+
+test("round robin keeps its catch-up week", () => {
+  const league = generateRoundRobinSchedule({
+    divisionId: "d-1",
+    entries,
+    startDate: "2026-10-05",
+    endDate: "2026-12-01"
+  });
+  const first = league[0];
+  // A full week of slack, where the bracket gets a day.
+  const extensionDays =
+    (new Date(`${first.extensionWeekEnd}T00:00:00Z`).getTime() - new Date(`${first.extensionWeekStart}T00:00:00Z`).getTime()) / 86400000;
+  assert.ok(extensionDays >= 6, `round robin extension spans ${extensionDays} days`);
+});

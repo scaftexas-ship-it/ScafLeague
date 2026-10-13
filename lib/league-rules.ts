@@ -276,8 +276,17 @@ export function generateEliminatorSchedule(params: {
   const entrants = entries.length === bracketSize ? entries : entries.slice(entries.length - firstRoundEntrantCount);
   const roundLabel = getEliminatorRoundLabel(bracketSize);
   const scheduleWeekEnd = addDays(scheduleWeekStart, 6);
-  const extensionWeekStart = addDays(scheduleWeekStart, 7);
-  const extensionWeekEnd = addDays(scheduleWeekStart, 13);
+
+  // A knockout round gets no extension week. Round robin can afford a second
+  // week to catch up in; a bracket cannot, because the next round is waiting
+  // on this result and every round that slips pushes the final back with it.
+  //
+  // Not literally zero: the matches table requires the extension window to
+  // begin after the schedule week ends (matches_check2), so the closest the
+  // schema allows is the single day straight after. That is a day of slack
+  // rather than a week -- the round still expires with its own week.
+  const extensionWeekStart = addDays(scheduleWeekEnd, 1);
+  const extensionWeekEnd = extensionWeekStart;
   const matches: Match[] = [];
 
   for (let index = 0; index < entrants.length / 2; index += 1) {
