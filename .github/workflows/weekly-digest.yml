@@ -33,7 +33,11 @@ jobs:
       - run: npm ci
       - name: Build and send
         env:
+          # Both names are forwarded because the app's .env.local calls it
+          # NEXT_PUBLIC_SUPABASE_URL -- whichever secret exists gets through,
+          # rather than the run dying on a name mismatch.
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           DIGEST_FROM: ${{ vars.DIGEST_FROM }}

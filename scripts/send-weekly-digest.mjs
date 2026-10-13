@@ -19,16 +19,37 @@ const SEND = process.env.SEND === "true";
 const ONLY_EMAIL = (process.env.ONLY_EMAIL || "").trim().toLowerCase();
 const FROM = process.env.DIGEST_FROM || "SCAF League <league@scaftexas.org>";
 
-function required(name) {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Missing ${name}.`);
-    process.exit(1);
+/**
+ * Accepts either name. The app's own .env.local calls these
+ * NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, so copying those
+ * names straight into GitHub is the obvious thing to do -- and used to fail
+ * with nothing in the log but "Missing SUPABASE_URL".
+ */
+function required(...names) {
+  for (const name of names) {
+    if (process.env[name]) return process.env[name];
   }
-  return value;
+  console.error(`Missing ${names[0]}. Looked for: ${names.join(", ")}.`);
+  console.error("Set it under Settings -> Secrets and variables -> Actions.");
+  process.exit(1);
 }
 
-const supabase = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } });
+// Printed before anything else so a failed run says what it had, not just that
+// it died. Values are never printed, only whether they arrived.
+const present = (...names) => (names.some((n) => process.env[n]) ? "set" : "MISSING");
+console.log("config:");
+console.log(`  SUPABASE_URL ................ ${present("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL")}`);
+console.log(`  SUPABASE_SERVICE_ROLE_KEY ... ${present("SUPABASE_SERVICE_ROLE_KEY")}`);
+console.log(`  RESEND_API_KEY .............. ${present("RESEND_API_KEY")}`);
+console.log(`  DIGEST_FROM ................. ${process.env.DIGEST_FROM ? process.env.DIGEST_FROM : "MISSING (must be a repo VARIABLE, not a secret)"}`);
+console.log(`  SEND ........................ ${process.env.SEND === "true" ? "true (will send)" : "false (dry run)"}`);
+console.log("");
+
+const supabase = createClient(
+  required("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
+  required("SUPABASE_SERVICE_ROLE_KEY"),
+  { auth: { persistSession: false } }
+);
 
 // US Central, the same clock the rest of the league runs on.
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -96,7 +117,14 @@ for (const digest of digests) {
   if (response.ok) {
     sent += 1;
   } else {
-    failures.push(`${digest.email}: ${response.status} ${(await response.text()).slice(0, 160)}`);
+    const body = (await response.text()).slice(0, 200);
+    failures.push(`${digest.email}: ${response.status} ${body}`);
+    // A rejected key or an unverified sender fails identically for everyone,
+    // so there is nothing to learn from the other 103 attempts.
+    if (sent === 0 && (response.status === 401 || response.status === 403 || failures.length >= 3)) {
+      console.error(`Stopping after ${failures.length} failure(s) with nothing sent -- this looks like configuration, not addresses.`);
+      break;
+    }
   }
   // Resend's default rate limit is 2/second; stay well under it.
   await new Promise((resolve) => setTimeout(resolve, 600));
