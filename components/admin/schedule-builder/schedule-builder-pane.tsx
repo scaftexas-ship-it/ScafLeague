@@ -215,7 +215,13 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
       } else {
         const domainEntries: DivisionEntry[] = selectedEntries.map((entry) => ({ id: entry.id, divisionId: entry.division_id, label: entry.label, playerIds: [] }));
         const generator = state.scheduleType === "eliminator" ? generateEliminatorSchedule : generateRoundRobinSchedule;
-        const generated = generator({ divisionId: division.id, entries: domainEntries, startDate: state.startDate, endDate: tournament.end_date });
+        const generated = generator({
+          divisionId: division.id,
+          entries: domainEntries,
+          startDate: state.startDate,
+          endDate: tournament.end_date,
+          extensionWeek: state.extensionWeek
+        });
         newRows = generated.map((match) => ({
           division_id: division.id,
           round: match.round,
@@ -346,6 +352,24 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
               ]}
               value={state.scheduleType}
             />
+          </label>
+
+          {/* Defaults to off for a playoff and on for a league, but it is the
+              admin's call either way -- some clubs do give a bracket a week of
+              grace, and some run a league strictly to the week. */}
+          <label className="field">
+            <span>Extension week</span>
+            <label className="checkbox-row">
+              <input
+                checked={state.extensionWeek}
+                onChange={(event) => builder.patch({ extensionWeek: event.target.checked })}
+                type="checkbox"
+              />
+              <span>
+                Give matches an extra week to be played and scored
+                {state.scheduleType === "eliminator" ? " (normally off for a playoff -- the next round waits on it)" : ""}
+              </span>
+            </label>
           </label>
 
           <label className="field">

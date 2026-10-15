@@ -8,6 +8,8 @@ import {
   gamesRating,
   generateEliminatorSchedule,
   generateRoundRobinSchedule,
+  hasExtensionWeek,
+  noExtensionWindow,
   rankEntriesByStandings
 } from "../lib/league-rules.ts";
 import type { DivisionEntry, Match } from "../lib/types.ts";
@@ -472,4 +474,31 @@ test("round robin keeps its catch-up week", () => {
   const extensionDays =
     (new Date(`${first.extensionWeekEnd}T00:00:00Z`).getTime() - new Date(`${first.extensionWeekStart}T00:00:00Z`).getTime()) / 86400000;
   assert.ok(extensionDays >= 6, `round robin extension spans ${extensionDays} days`);
+});
+
+test("the dates themselves say whether a match has an extension week", () => {
+  // The narrowest window the matches table permits means "none".
+  assert.equal(hasExtensionWeek("2026-10-11", "2026-10-12"), false, "one day after is the schema's minimum, not an extension");
+  assert.equal(hasExtensionWeek("2026-10-11", "2026-10-18"), true, "a real week");
+  const none = noExtensionWindow("2026-10-11");
+  assert.deepEqual(none, { extensionWeekStart: "2026-10-12", extensionWeekEnd: "2026-10-12" });
+  // Whatever it produces must still satisfy matches_check2.
+  assert.ok(none.extensionWeekStart > "2026-10-11");
+  assert.equal(hasExtensionWeek("2026-10-11", none.extensionWeekEnd), false);
+});
+
+test("the admin's choice overrides the default for either schedule type", () => {
+  const args = { divisionId: "d-1", entries, startDate: "2026-10-05", endDate: "2026-12-01" };
+
+  // A playoff can be given one if the club wants it.
+  const bracketWith = generateEliminatorSchedule({ ...args, extensionWeek: true })[0];
+  assert.ok(hasExtensionWeek(bracketWith.scheduleWeekEnd, bracketWith.extensionWeekEnd), "playoff with an extension when asked");
+
+  // And a league can be run strictly to the week.
+  const leagueWithout = generateRoundRobinSchedule({ ...args, extensionWeek: false })[0];
+  assert.equal(hasExtensionWeek(leagueWithout.scheduleWeekEnd, leagueWithout.extensionWeekEnd), false, "league without one when asked");
+
+  // Defaults unchanged when nothing is passed.
+  assert.equal(hasExtensionWeek(generateEliminatorSchedule(args)[0].scheduleWeekEnd, generateEliminatorSchedule(args)[0].extensionWeekEnd), false);
+  assert.ok(hasExtensionWeek(generateRoundRobinSchedule(args)[0].scheduleWeekEnd, generateRoundRobinSchedule(args)[0].extensionWeekEnd));
 });

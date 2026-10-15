@@ -179,11 +179,32 @@ export function rankEntriesByStandings(entries: DivisionEntry[], matches: Match[
   return [...entries].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
 }
 
+/**
+ * Whether a match carries a real extension week.
+ *
+ * The matches table has no column for this, and it does not need one: the
+ * dates already say it. A match with no extension is written with the
+ * narrowest window the schema permits -- the single day after its schedule
+ * week, because matches_check2 forbids anything shorter -- so anything
+ * reaching past that day is a genuine extension.
+ */
+export function hasExtensionWeek(scheduleWeekEnd: string, extensionWeekEnd: string) {
+  return extensionWeekEnd > addDays(scheduleWeekEnd, 1);
+}
+
+/** The narrowest extension the matches table allows, used to mean "none". */
+export function noExtensionWindow(scheduleWeekEnd: string) {
+  const day = addDays(scheduleWeekEnd, 1);
+  return { extensionWeekStart: day, extensionWeekEnd: day };
+}
+
 export function generateRoundRobinSchedule(params: {
   divisionId: string;
   entries: DivisionEntry[];
   startDate: string;
   endDate: string;
+  /** Defaults to true: a league round has always had a week to catch up in. */
+  extensionWeek?: boolean;
 }): Match[] {
   const entries = [...params.entries].sort((a, b) => a.label.localeCompare(b.label));
   if (entries.length < 2) return [];
@@ -210,8 +231,10 @@ export function generateRoundRobinSchedule(params: {
     const current = [competitors[0], ...rotating];
     const scheduleWeekStart = addDays(params.startDate, round * spacingDays);
     const scheduleWeekEnd = addDays(scheduleWeekStart, 6);
-    const extensionWeekStart = addDays(scheduleWeekStart, 7);
-    const extensionWeekEnd = addDays(scheduleWeekStart, 13);
+    const { extensionWeekStart, extensionWeekEnd } =
+      params.extensionWeek === false
+        ? noExtensionWindow(scheduleWeekEnd)
+        : { extensionWeekStart: addDays(scheduleWeekStart, 7), extensionWeekEnd: addDays(scheduleWeekStart, 13) };
 
     for (let index = 0; index < half; index += 1) {
       const left = current[index];
@@ -259,6 +282,8 @@ export function generateEliminatorSchedule(params: {
   entries: DivisionEntry[];
   startDate: string;
   endDate: string;
+  /** Defaults to false: the next round is waiting on this one. */
+  extensionWeek?: boolean;
 }): Match[] {
   // Seed order matters: entries[0] pairs with entries[n-1], entries[1] with
   // entries[n-2], and so on (standard bracket seeding), and whoever's first
@@ -285,8 +310,10 @@ export function generateEliminatorSchedule(params: {
   // begin after the schedule week ends (matches_check2), so the closest the
   // schema allows is the single day straight after. That is a day of slack
   // rather than a week -- the round still expires with its own week.
-  const extensionWeekStart = addDays(scheduleWeekEnd, 1);
-  const extensionWeekEnd = extensionWeekStart;
+  const { extensionWeekStart, extensionWeekEnd } =
+    params.extensionWeek === true
+      ? { extensionWeekStart: addDays(scheduleWeekEnd, 1), extensionWeekEnd: addDays(scheduleWeekEnd, 7) }
+      : noExtensionWindow(scheduleWeekEnd);
   const matches: Match[] = [];
 
   for (let index = 0; index < entrants.length / 2; index += 1) {

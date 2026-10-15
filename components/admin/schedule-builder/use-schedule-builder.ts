@@ -36,6 +36,7 @@ export type ScheduleBuilderState = {
   skillLevel: string;
   numberOfSets: string;
   scheduleType: ScheduleType;
+  extensionWeek: boolean;
   format: DivisionFormat;
   startDate: string;
   restrictScoreUpdates: boolean;
@@ -64,6 +65,9 @@ function initialState(startDate: string, sport?: Sport): ScheduleBuilderState {
     name: "Division 1",
     skillLevel: "3.5",
     numberOfSets: "3",
+    // Default follows the format: a league round gets a week to catch up in,
+    // a knockout round does not, because the next round waits on it.
+    extensionWeek: true,
     scheduleType: "round_robin",
     format: "singles",
     startDate,
@@ -102,8 +106,16 @@ type Action =
 
 function reducer(state: ScheduleBuilderState, action: Action): ScheduleBuilderState {
   switch (action.type) {
-    case "patch":
-      return { ...state, ...action.patch };
+    case "patch": {
+      const next = { ...state, ...action.patch };
+      // Changing the format re-picks the extension default, unless the admin
+      // set it in the same breath. Otherwise switching to a knockout would
+      // silently keep the league's catch-up week.
+      if (action.patch.scheduleType !== undefined && action.patch.extensionWeek === undefined) {
+        next.extensionWeek = action.patch.scheduleType !== "eliminator";
+      }
+      return next;
+    }
     case "reset":
       return initialState(action.startDate, action.sport);
     case "toggle-player": {

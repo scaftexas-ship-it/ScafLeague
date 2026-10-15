@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ArrowLeftRight, ListPlus, Pencil } from "lucide-react";
-import { addDays } from "@/lib/league-rules";
+import { addDays, hasExtensionWeek, noExtensionWindow } from "@/lib/league-rules";
 import { buildSetsFromForm, canSubmitScoreInWindow, setScoreFormFromSets, validateMatchSets } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
 import { formatStatusLabel, todayIso } from "@/lib/format";
@@ -71,6 +71,23 @@ export function MatchEditor({
   // held to the window on their own card.
   const pastWindow = !canSubmitScoreInWindow(match, today, addDays);
 
+  // Driven by the dates rather than a stored flag -- a match written with the
+  // narrowest window the schema allows is one that has no extension. Showing
+  // two date boxes for a window that is meant not to exist invited admins to
+  // "fix" them, which is what put a playoff back on a two-week leash.
+  const extensionWeek = hasExtensionWeek(scheduleWeekEnd, extensionWeekEnd);
+
+  function addExtensionWeek() {
+    setExtensionWeekStart(addDays(scheduleWeekEnd, 1));
+    setExtensionWeekEnd(addDays(scheduleWeekEnd, 7));
+  }
+
+  function removeExtensionWeek() {
+    const window = noExtensionWindow(scheduleWeekEnd);
+    setExtensionWeekStart(window.extensionWeekStart);
+    setExtensionWeekEnd(window.extensionWeekEnd);
+  }
+
   // Scores belong on any match that could still be played, not just one an
   // admin has already flipped to "completed" by hand. Hiding the grid behind
   // that dropdown meant opening a scheduled match showed nothing but dates --
@@ -93,13 +110,19 @@ export function MatchEditor({
       setLocalMessage("The schedule week can't end before it starts. Check the schedule week dates.");
       return;
     }
-    if (extensionWeekStart <= scheduleWeekEnd) {
+    // With no extension week the two date boxes are hidden, so the window has
+    // to follow the schedule week on its own. Without this, moving a playoff
+    // later left the collapsed window behind it and the save failed on a rule
+    // about fields the admin could not even see.
+    const window = extensionWeek ? { extensionWeekStart, extensionWeekEnd } : noExtensionWindow(scheduleWeekEnd);
+
+    if (window.extensionWeekStart <= scheduleWeekEnd) {
       setLocalMessage(
         `The extension week has to start after the schedule week ends (${scheduleWeekEnd}). To move this match later, shift the extension week dates too.`
       );
       return;
     }
-    if (extensionWeekEnd < extensionWeekStart) {
+    if (window.extensionWeekEnd < window.extensionWeekStart) {
       setLocalMessage("The extension week can't end before it starts. Check the extension week dates.");
       return;
     }
@@ -115,8 +138,8 @@ export function MatchEditor({
       target_score: Number(targetScore) || match.target_score,
       schedule_week_start: scheduleWeekStart,
       schedule_week_end: scheduleWeekEnd,
-      extension_week_start: extensionWeekStart,
-      extension_week_end: extensionWeekEnd,
+      extension_week_start: window.extensionWeekStart,
+      extension_week_end: window.extensionWeekEnd,
       status: effectiveStatus,
       winner_entry_id: null,
       forfeit_by_entry_id: null
@@ -216,16 +239,33 @@ export function MatchEditor({
               <input onChange={(event) => setScheduleWeekEnd(event.target.value)} type="date" value={scheduleWeekEnd} />
             </label>
           </div>
-          <div className="field-row">
-            <label className="field">
-              <span>Extension week start</span>
-              <input onChange={(event) => setExtensionWeekStart(event.target.value)} type="date" value={extensionWeekStart} />
-            </label>
-            <label className="field">
-              <span>Extension week end</span>
-              <input onChange={(event) => setExtensionWeekEnd(event.target.value)} type="date" value={extensionWeekEnd} />
-            </label>
-          </div>
+          {extensionWeek ? (
+            <>
+              <div className="field-row">
+                <label className="field">
+                  <span>Extension week start</span>
+                  <input onChange={(event) => setExtensionWeekStart(event.target.value)} type="date" value={extensionWeekStart} />
+                </label>
+                <label className="field">
+                  <span>Extension week end</span>
+                  <input onChange={(event) => setExtensionWeekEnd(event.target.value)} type="date" value={extensionWeekEnd} />
+                </label>
+              </div>
+              <div className="spread">
+                <span className="subtle">This match has an extension week to be played and scored in.</span>
+                <button className="link-button" onClick={removeExtensionWeek} type="button">
+                  Remove extension week
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="spread">
+              <span className="subtle">No extension week &mdash; this match runs to {scheduleWeekEnd} and no further.</span>
+              <button className="link-button" onClick={addExtensionWeek} type="button">
+                Add an extension week
+              </button>
+            </div>
+          )}
 
           {scoreEntryApplies ? (
             <>
