@@ -1,0 +1,34 @@
+name: Advance knockout brackets
+
+# Builds the semifinals once the quarterfinals are finished, and the final once
+# the semifinals are. The app does this itself whenever an admin saves a result
+# or opens the admin workspace; this catches results that players post on their
+# own, which a player's browser isn't allowed to turn into new matches.
+on:
+  schedule:
+    # Hourly, at an off-peak minute.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+# A slow run must not be joined by the next one.
+concurrency:
+  group: advance-knockouts
+  cancel-in-progress: false
+
+jobs:
+  advance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Advance finished rounds
+        env:
+          # Both names forwarded, as in the weekly email workflow.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node --experimental-strip-types scripts/advance-knockouts.mjs

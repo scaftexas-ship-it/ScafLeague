@@ -11,6 +11,7 @@ import {
 } from "@/lib/admin-data";
 import type { NewMatchRow } from "@/lib/admin-data";
 import { formatDivisionName } from "@/lib/format";
+import { drawOrderTimestamps } from "@/lib/knockout";
 import { generateEliminatorSchedule, generateRoundRobinSchedule } from "@/lib/league-rules";
 import type { DivisionEntry, DivisionFormat } from "@/lib/types";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -147,16 +148,20 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
           });
 
       const existingEntries = admin.divisionEntries.filter((entry) => entry.division_id === division.id);
-      const missingRows = selectedIds
-        .filter((id) => !existingEntries.some((entry) => (state.format === "doubles" ? entry.team_id === id : entry.player_id === id)))
-        .map((id) => {
-          if (state.format === "doubles") {
-            const team = admin.teams.find((item) => item.id === id)!;
-            return { division_id: division.id, label: team.name, team_id: id };
-          }
-          const player = admin.players.find((item) => item.id === id)!;
-          return { division_id: division.id, label: player.display_name, player_id: id };
-        });
+      // A bracket remembers its draw: entries are stamped in seed order, so
+      // that when a round finishes the next one can tell who had a bye.
+      const isKnockout = state.scheduleType === "eliminator";
+      const missingIds = selectedIds.filter((id) => !existingEntries.some((entry) => (state.format === "doubles" ? entry.team_id === id : entry.player_id === id)));
+      const entryStamps = drawOrderTimestamps(missingIds.length);
+      const missingRows = missingIds.map((id, index) => {
+        const drawn = isKnockout ? { created_at: entryStamps[index] } : {};
+        if (state.format === "doubles") {
+          const team = admin.teams.find((item) => item.id === id)!;
+          return { division_id: division.id, label: team.name, team_id: id, ...drawn };
+        }
+        const player = admin.players.find((item) => item.id === id)!;
+        return { division_id: division.id, label: player.display_name, player_id: id, ...drawn };
+      });
       const insertedEntries = await insertDivisionEntries(admin.supabase, missingRows);
       const allEntries = [...existingEntries, ...insertedEntries];
       // Preserve selectedIds' order (not allEntries' order) -- this is the
@@ -222,7 +227,11 @@ export function ScheduleBuilderPane({ admin }: { admin: AdminData }) {
           endDate: tournament.end_date,
           extensionWeek: state.extensionWeek
         });
-        newRows = generated.map((match) => ({
+        // Round one of a bracket is stamped in bracket order too, so later
+        // rounds know which winner meets which (see lib/knockout.ts).
+        const matchStamps = drawOrderTimestamps(generated.length);
+        newRows = generated.map((match, index) => ({
+          ...(state.scheduleType === "eliminator" ? { created_at: matchStamps[index] } : {}),
           division_id: division.id,
           round: match.round,
           round_label: match.roundLabel,

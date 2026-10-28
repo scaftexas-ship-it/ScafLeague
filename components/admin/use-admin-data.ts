@@ -18,6 +18,8 @@ import {
   reconcileExpiredMatches
 } from "@/lib/admin-data";
 import { todayIso } from "@/lib/format";
+import { advanceKnockoutBrackets, isKnockoutLabel } from "@/lib/knockout";
+import type { KnockoutAdvance } from "@/lib/knockout";
 import type {
   AppUserRow,
   ClubRow,
@@ -129,18 +131,33 @@ export function useAdminData() {
   }
 
   const reloadDivisions = useCallback(
-    async (tournamentId: string) => {
-      if (!supabase || !tournamentId) return;
+    async (tournamentId: string): Promise<KnockoutAdvance[]> => {
+      if (!supabase || !tournamentId) return [];
       const divisionRows = await listDivisions(supabase, tournamentId);
       setDivisions(divisionRows);
       const divisionIds = divisionRows.map((division) => division.id);
       const entries = await listDivisionEntries(supabase, divisionIds);
       setDivisionEntries(entries);
       const loadedMatches = await listMatches(supabase, divisionIds);
-      const matchRows = await reconcileExpiredMatches(supabase, loadedMatches, todayIso());
+      let matchRows = await reconcileExpiredMatches(supabase, loadedMatches, todayIso());
+
+      // Knockout brackets build their own next round: once every match in a
+      // round has a winner, the semifinals/final are created. Runs on every
+      // load and save, so it needs no button -- and does nothing (no queries
+      // at all) for tournaments that have no bracket.
+      let advanced: KnockoutAdvance[] = [];
+      const bracketDivisionIds = Array.from(new Set(matchRows.filter((match) => isKnockoutLabel(match.round_label)).map((match) => match.division_id)));
+      if (bracketDivisionIds.length > 0) {
+        advanced = await advanceKnockoutBrackets(supabase, bracketDivisionIds, todayIso());
+        if (advanced.some((result) => result.outcome === "created")) {
+          matchRows = await reconcileExpiredMatches(supabase, await listMatches(supabase, divisionIds), todayIso());
+        }
+      }
+
       setMatches(matchRows);
       const matchIds = matchRows.map((match) => match.id);
       setMatchSets(await listMatchSets(supabase, matchIds));
+      return advanced;
     },
     [supabase]
   );

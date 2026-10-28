@@ -595,7 +595,7 @@ export async function listDivisionEntries(supabase: SupabaseClient, divisionIds:
 
 export async function insertDivisionEntries(
   supabase: SupabaseClient,
-  rows: Array<{ division_id: string; label: string; player_id?: string; team_id?: string }>
+  rows: Array<{ division_id: string; label: string; player_id?: string; team_id?: string; created_at?: string }>
 ) {
   if (rows.length === 0) return [] as DivisionEntryRow[];
   const { data, error } = await supabase.from("division_entries").insert(rows).select("id, division_id, label, player_id, team_id");
@@ -676,6 +676,8 @@ export type NewMatchRow = {
   extension_week_start: string;
   extension_week_end: string;
   status: "scheduled";
+  /** Set only for knockout draws, where the order rows are created in is the order they sit in the bracket (see drawOrderTimestamps in lib/knockout.ts). */
+  created_at?: string;
 };
 
 export async function insertMatches(supabase: SupabaseClient, rows: NewMatchRow[]) {

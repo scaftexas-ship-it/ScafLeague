@@ -23,6 +23,7 @@ import type { DivisionEntryRow, DivisionRow, MatchRow, MatchSetRow, PlayerProfil
 import { listAllPlayersInClub, listEntriesForPlayerIds, listEntriesForTeamIds, listPlayerProfilesForUser, listTeamIdsForPlayerIds } from "@/lib/player-data";
 import { validateMatchSets } from "@/lib/match-scoring";
 import { todayIso } from "@/lib/format";
+import { advanceKnockoutBrackets, isKnockoutLabel } from "@/lib/knockout";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Versus } from "@/components/ui/versus";
@@ -146,7 +147,17 @@ export function PlayerWorkspace() {
       setEntries(loadedEntries);
 
       const [loadedMatches, standingRows] = await Promise.all([listMatches(supabase, divisionIds), listStandings(supabase, divisionIds)]);
-      const allMatches = await reconcileExpiredMatches(supabase, loadedMatches, todayIso());
+      let allMatches = await reconcileExpiredMatches(supabase, loadedMatches, todayIso());
+      // Only admins can create matches (players' accounts are limited to their own
+      // scores), so an admin opening this view is what builds a finished round's
+      // successor; the hourly workflow covers the case where no admin does.
+      const bracketDivisionIds = Array.from(new Set(allMatches.filter((match) => isKnockoutLabel(match.round_label)).map((match) => match.division_id)));
+      if (isAdmin && bracketDivisionIds.length > 0) {
+        const advanced = await advanceKnockoutBrackets(supabase, bracketDivisionIds, todayIso());
+        if (advanced.some((result) => result.outcome === "created")) {
+          allMatches = await reconcileExpiredMatches(supabase, await listMatches(supabase, divisionIds), todayIso());
+        }
+      }
       setMatches(allMatches);
       setStandings(standingRows);
       // Players could never see a posted score -- this was simply never loaded.

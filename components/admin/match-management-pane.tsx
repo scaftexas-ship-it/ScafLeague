@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ClipboardX, Pencil } from "lucide-react";
+import { describeKnockoutAdvance } from "@/lib/knockout";
 import { deleteDivision, renameDivision, replaceMatchSets, swapMatchHomeAway, updateMatch } from "@/lib/admin-data";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -49,8 +50,9 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
     try {
       await replaceMatchSets(admin.supabase, match.id, sets);
       await updateMatch(admin.supabase, match.id, patch);
-      await admin.reloadDivisions();
-      setMessage("Match saved.");
+      const advanced = await admin.reloadDivisions();
+      // A finished round builds the next one on its own; say so, or say what's in the way.
+      setMessage(["Match saved.", describeKnockoutAdvance(advanced)].filter(Boolean).join(" "));
     } catch (error) {
       setMessage(readableSaveError(error));
     } finally {
