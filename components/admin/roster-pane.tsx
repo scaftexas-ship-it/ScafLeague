@@ -26,12 +26,12 @@ import type { AdminData } from "./use-admin-data";
  * The preview below spells out which matches each one actually hits before
  * anything is written.
  */
-export function RosterPane({ admin }: { admin: AdminData }) {
+export function RosterPane({ admin, initialDivisionId = "" }: { admin: AdminData; initialDivisionId?: string }) {
   const [savingKey, setSavingKey] = useState("");
   const [message, setMessage] = useState("");
   const [replacementByKey, setReplacementByKey] = useState<Record<string, string>>({});
   const [sportFilter, setSportFilter] = useState<Sport | "all">("all");
-  const [divisionFilter, setDivisionFilter] = useState("all");
+  const [divisionFilter, setDivisionFilter] = useState(initialDivisionId || "all");
   const [search, setSearch] = useState("");
   const [teamReach, setTeamReach] = useState<Record<string, DivisionEntryRow[]>>({});
   // For a team entered in several divisions: "all", or the one entry to change.

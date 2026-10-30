@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeftRight, ListPlus, Pencil } from "lucide-react";
+import { ArrowLeftRight, ListPlus, Pencil, UserCog } from "lucide-react";
 import { addDays, hasExtensionWeek, noExtensionWindow } from "@/lib/league-rules";
 import { buildSetsFromForm, canSubmitScoreInWindow, setScoreFormFromSets, validateMatchSets } from "@/lib/match-scoring";
 import type { SetScoreForm } from "@/lib/match-scoring";
@@ -35,6 +35,7 @@ export function MatchEditor({
   sets,
   onSave,
   onSwapHomeAway,
+  onChangePlayer,
   saving,
   swapping,
   sport
@@ -46,6 +47,8 @@ export function MatchEditor({
   sets: MatchSetRow[];
   onSave: (match: MatchRow, sets: ReturnType<typeof buildSetsFromForm>, patch: MatchEditPatch) => Promise<void>;
   onSwapHomeAway: (match: MatchRow) => Promise<void>;
+  /** Opens Substitutions on this match's division. Absent where there is nowhere to go. */
+  onChangePlayer?: (match: MatchRow) => void;
   saving: boolean;
   swapping: boolean;
   sport: Sport;
@@ -197,6 +200,13 @@ export function MatchEditor({
           {!open && scoreEntryApplies ? (
             <button className="link-button" onClick={() => setOpen(true)} type="button">
               <ListPlus size={14} aria-hidden /> {sets.length > 0 ? "Edit score" : "Add score"}
+            </button>
+          ) : null}
+          {/* Replacing a player used to live only in the Substitutions tab, where
+              nobody looking at a match thought to go. */}
+          {onChangePlayer && match.status !== "completed" && match.status !== "forfeit" ? (
+            <button className="link-button" onClick={() => onChangePlayer(match)} type="button">
+              <UserCog size={14} aria-hidden /> Change player
             </button>
           ) : null}
           <button className="link-button" onClick={() => setOpen((current) => !current)} type="button">

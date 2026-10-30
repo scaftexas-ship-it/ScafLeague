@@ -35,6 +35,8 @@ function readableSaveError(error: unknown) {
 
 export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const [activeTab, setActiveTab] = useState<MatchesTab>("matches");
+  // Set when "Change player" on a match sends the admin to Substitutions.
+  const [rosterDivisionId, setRosterDivisionId] = useState("");
   const [savingMatchId, setSavingMatchId] = useState("");
   const [swappingMatchId, setSwappingMatchId] = useState("");
   const [message, setMessage] = useState("");
@@ -79,6 +81,11 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
   const sortedMatches = [...filteredMatches].sort((a, b) => a.schedule_week_start.localeCompare(b.schedule_week_start) || a.round - b.round);
   const sport = admin.tournaments.find((tournament) => tournament.id === admin.selectedTournamentId)?.sport || "pickleball";
   const selectedDivision = admin.divisions.find((division) => division.id === divisionFilter);
+
+  function changePlayerFor(match: MatchRow) {
+    setRosterDivisionId(match.division_id);
+    setActiveTab("roster");
+  }
 
   function handleTournamentFilterChange(tournamentId: string) {
     admin.setSelectedTournamentId(tournamentId);
@@ -132,7 +139,10 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
     <div className="stack">
       <SegmentedControl
         ariaLabel="Matches section"
-        onChange={setActiveTab}
+        onChange={(tab) => {
+          if (tab !== "roster") setRosterDivisionId("");
+          setActiveTab(tab);
+        }}
         options={[
           { value: "roster", label: "Substitutions" },
           { value: "matches", label: "Match Management" },
@@ -142,7 +152,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
         value={activeTab}
       />
 
-      {activeTab === "roster" ? <RosterPane admin={admin} /> : null}
+      {activeTab === "roster" ? <RosterPane admin={admin} initialDivisionId={rosterDivisionId} /> : null}
       {activeTab === "dupr" ? <DuprExportPane admin={admin} /> : null}
       {activeTab === "ratings" && admin.adminUser ? (
         <RatingPanel clubId={admin.adminUser.club_id} players={admin.players} supabase={admin.supabase} />
@@ -229,6 +239,7 @@ export function MatchManagementPane({ admin }: { admin: AdminData }) {
                   key={match.id}
                   match={match}
                   onSave={saveMatch}
+                  onChangePlayer={changePlayerFor}
                   onSwapHomeAway={swapHomeAway}
                   saving={savingMatchId === match.id}
                   swapping={swappingMatchId === match.id}
