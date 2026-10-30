@@ -95,9 +95,9 @@ begin
       using errcode = 'check_violation';
   end if;
 
-  -- Backdating window. Filling in a day you forgot is fine; quietly loading
-  -- two months of steps into a live leaderboard is not. Admins are exempt so
-  -- someone can still correct the record after the fact.
+  -- Backdating window: about three months (92 days), for people who join late
+  -- or only sync their watch now and then. Admins are exempt so someone can
+  -- still correct the record after the fact.
   if not public.is_admin() then
     -- Both sides now read the clock in US Central, so the day of slack is
     -- only for a player whose device is set to another zone -- without it,
@@ -109,9 +109,9 @@ begin
     end if;
 
     -- For a weekly total the clock starts when the week ENDED, not when it
-    -- began, so a week stays postable for seven days after it finishes.
-    if (case when new.covers_week then new.entry_date + 6 else new.entry_date end) < (now() at time zone 'America/Chicago')::date - 7 then
-      raise exception 'Steps can only be logged up to 7 days back.'
+    -- began, so a week stays postable for the whole window after it finishes.
+    if (case when new.covers_week then new.entry_date + 6 else new.entry_date end) < (now() at time zone 'America/Chicago')::date - 92 then
+      raise exception 'Steps can only be logged up to 92 days back.'
         using errcode = 'check_violation';
     end if;
   end if;

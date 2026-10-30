@@ -99,11 +99,12 @@ test("leaderboard totals only count the selected period", () => {
 
 const openWalkathon = { start_date: "2026-01-01", end_date: "2026-12-31" };
 
-test("a day can be logged today and up to seven days back, but not before", () => {
+test("a day can be logged today and up to 92 days back, but not before", () => {
   const today = "2026-08-14";
   assert.equal(describeDateProblem("day", "2026-08-14", today, openWalkathon), null, "today");
-  assert.equal(describeDateProblem("day", "2026-08-07", today, openWalkathon), null, "exactly 7 days back");
-  assert.match(String(describeDateProblem("day", "2026-08-06", today, openWalkathon)), /7 days back/, "8 days back");
+  assert.equal(describeDateProblem("day", "2026-07-01", today, openWalkathon), null, "six weeks back");
+  assert.equal(describeDateProblem("day", "2026-05-14", today, openWalkathon), null, "exactly 92 days back");
+  assert.match(String(describeDateProblem("day", "2026-05-13", today, openWalkathon)), /92 days back/, "93 days back");
   assert.match(String(describeDateProblem("day", "2026-08-15", today, openWalkathon)), /future/, "tomorrow");
 });
 
@@ -115,20 +116,22 @@ test("the walkathon's own dates still win over the backdating window", () => {
   assert.equal(describeDateProblem("day", "2026-08-14", "2026-08-14", startsToday), null);
 });
 
-test("a week stays postable for seven days after it ends, judged on its last day", () => {
+test("a week stays postable for the whole window after it ends, judged on its last day", () => {
   const today = "2026-08-14"; // Friday, in the week beginning Monday 2026-08-10.
   assert.equal(describeDateProblem("week", "2026-08-12", today, openWalkathon), null, "the current week");
   // Week of 2026-08-03 ended Sunday 2026-08-09 -- five days ago, still fine,
   // even though its Monday is eleven days back.
   assert.equal(describeDateProblem("week", "2026-08-03", today, openWalkathon), null, "last week");
-  // Week of 2026-07-27 ended 2026-08-02, twelve days ago.
-  assert.match(String(describeDateProblem("week", "2026-07-27", today, openWalkathon)), /7 days back/, "two weeks ago");
+  // Week of 2026-05-11 ended 2026-05-17 -- 89 days ago, still inside the window.
+  assert.equal(describeDateProblem("week", "2026-05-11", today, openWalkathon), null, "three months ago");
+  // Week of 2026-05-04 ended 2026-05-10, 96 days ago.
+  assert.match(String(describeDateProblem("week", "2026-05-04", today, openWalkathon)), /92 days back/, "too long ago");
 });
 
 test("date bounds reach further back in week mode, and never past today", () => {
   const today = "2026-08-14";
-  assert.deepEqual(loggableDateBounds("day", today, openWalkathon), { min: "2026-08-07", max: today });
-  assert.deepEqual(loggableDateBounds("week", today, openWalkathon), { min: "2026-08-01", max: today });
+  assert.deepEqual(loggableDateBounds("day", today, openWalkathon), { min: "2026-05-14", max: today });
+  assert.deepEqual(loggableDateBounds("week", today, openWalkathon), { min: "2026-05-08", max: today });
   // Clamped to the event: a walkathon starting today offers only today.
   assert.deepEqual(loggableDateBounds("day", today, { start_date: today, end_date: "2026-10-03" }), { min: today, max: today });
   // And to its end date once the event is over.

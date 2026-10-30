@@ -107,17 +107,21 @@ export function formatSteps(steps: number) {
   return steps.toLocaleString("en-US");
 }
 
-/** How far back a player may still fill in steps they forgot to log. */
-export const STEP_BACKDATE_DAYS = 7;
+/**
+ * How far back a player may still fill in steps they forgot to log: about three
+ * months, because people join late or only sync their watch occasionally. Keep
+ * in step with the 92 in walkathon_validate_entry (supabase/widen-walkathon-backdate.sql).
+ */
+export const STEP_BACKDATE_DAYS = 92;
 
 /**
  * The window a player may still log, narrowed to the walkathon's own dates.
  *
  * A weekly post is filed against its Monday, so the week-mode floor reaches
- * further back than seven days: a week that ENDED within the last seven days
- * began up to thirteen days ago. Judging a weekly post by its Monday alone
- * would mean a Sunday-to-Saturday week became unpostable the day after it
- * finished, which is exactly when people total one up.
+ * further back than seven days: a week that ENDED within the window began up to six
+ * days before it opens. Judging a weekly post by its Monday alone would mean a
+ * Sunday-to-Saturday week became unpostable the day after it finished, which
+ * is exactly when people total one up.
  */
 export function loggableDateBounds(
   mode: "day" | "week",
