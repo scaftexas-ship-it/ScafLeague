@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ArrowRight, Search, UserCog } from "lucide-react";
-import { listEntriesForTeam, replaceDivisionEntryPlayer, replaceTeamMember } from "@/lib/admin-data";
+import { listEntriesForTeam, replaceDivisionEntryPlayer, replaceTeamMember, replaceTeamMemberInEntry } from "@/lib/admin-data";
+import { isKnockoutLabel } from "@/lib/knockout";
 import type { DivisionEntryRow, MatchRow } from "@/lib/admin-data";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -19,7 +20,9 @@ import type { AdminData } from "./use-admin-data";
  * used to feel unpredictable:
  *   singles -- rewrites one division_entries row, so it touches one division.
  *   doubles -- rewrites team_members, so it follows the TEAM into every division
- *              and tournament it is entered in.
+ *              and tournament it is entered in. A team that is also in an
+ *              eliminator can instead be changed for that one division only,
+ *              leaving the group stage as it was played.
  * The preview below spells out which matches each one actually hits before
  * anything is written.
  */
@@ -31,6 +34,8 @@ export function RosterPane({ admin }: { admin: AdminData }) {
   const [divisionFilter, setDivisionFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [teamReach, setTeamReach] = useState<Record<string, DivisionEntryRow[]>>({});
+  // For a team entered in several divisions: "all", or the one entry to change.
+  const [scopeByTeam, setScopeByTeam] = useState<Record<string, string>>({});
 
   const sportTournaments = admin.tournaments.filter((tournament) => sportFilter === "all" || tournament.sport === sportFilter);
   const availableSports = Array.from(new Set(admin.tournaments.map((tournament) => tournament.sport)));
@@ -136,18 +141,27 @@ export function RosterPane({ admin }: { admin: AdminData }) {
     }
   }
 
-  async function replaceDoubles(teamId: string, oldPlayerId: string, newPlayerId: string, key: string) {
+  async function replaceDoubles(teamId: string, oldPlayerId: string, newPlayerId: string, key: string, onlyEntry?: DivisionEntryRow) {
     const newPlayer = admin.players.find((player) => player.id === newPlayerId);
     if (!admin.supabase || !newPlayer) return;
     setSavingKey(key);
     setMessage("");
     try {
       const oldName = playerName(oldPlayerId);
-      await replaceTeamMember(admin.supabase, teamId, oldPlayerId, newPlayerId, { oldName, newName: newPlayer.display_name });
+      const names = { oldName, newName: newPlayer.display_name };
+      if (onlyEntry) {
+        await replaceTeamMemberInEntry(admin.supabase, onlyEntry.id, oldPlayerId, newPlayerId, names);
+      } else {
+        await replaceTeamMember(admin.supabase, teamId, oldPlayerId, newPlayerId, names);
+      }
       await admin.reloadTeams();
       await admin.reloadDivisions();
       setReplacementByKey((current) => ({ ...current, [key]: "" }));
-      setMessage(`${oldName} replaced with ${newPlayer.display_name} on this team. The team name and fixtures now show ${newPlayer.display_name}.`);
+      setMessage(
+        onlyEntry
+          ? `${oldName} replaced with ${newPlayer.display_name} in ${divisionName(onlyEntry.division_id)} only. The team's other divisions are unchanged, and its matches here kept their dates and opponents.`
+          : `${oldName} replaced with ${newPlayer.display_name} on this team. The team name and fixtures now show ${newPlayer.display_name}.`
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not replace the player.");
     } finally {
@@ -331,8 +345,17 @@ export function RosterPane({ admin }: { admin: AdminData }) {
             const reachDivisions = Array.from(new Set(reach.map((entry) => entry.division_id)));
             const outsideView = reachDivisions.filter((id) => !divisionIds.has(id)).length;
             const scopeEntries = reach.length > 0 ? reach : teamEntries.filter((entry) => entry.team_id === teamId);
-            const teamEntryIds = scopeEntries.map((entry) => entry.id);
-            const teamDivisionIds = scopeEntries.map((entry) => entry.division_id);
+            // A team in several divisions can be changed in just one of them. A
+            // bracket is where that matters: it reuses the group-stage team.
+            // Only divisions of the tournament on screen are offered by name.
+            const inView = scopeEntries.filter((entry) => divisionIds.has(entry.division_id));
+            const choosable = scopeEntries.length > 1 && inView.length > 0;
+            const knockoutEntry = inView.find((entry) => admin.matches.some((match) => match.division_id === entry.division_id && isKnockoutLabel(match.round_label)));
+            const scope = choosable ? scopeByTeam[teamId] ?? knockoutEntry?.id ?? "all" : "all";
+            const onlyEntry = scope === "all" ? undefined : inView.find((entry) => entry.id === scope);
+            const affectedEntries = onlyEntry ? [onlyEntry] : scopeEntries;
+            const teamEntryIds = affectedEntries.map((entry) => entry.id);
+            const teamDivisionIds = affectedEntries.map((entry) => entry.division_id);
 
             return (
               <div className="sub-row" key={teamId}>
@@ -348,7 +371,20 @@ export function RosterPane({ admin }: { admin: AdminData }) {
                     <strong className="sub-row-name">{team?.name || "Team"}</strong>
                   </div>
                 </div>
-                {outsideView > 0 ? (
+                {choosable ? (
+                  <label className="field">
+                    <span>Change it in</span>
+                    <select onChange={(event) => setScopeByTeam((current) => ({ ...current, [teamId]: event.target.value }))} value={scope}>
+                      <option value="all">Every division this team plays in ({scopeEntries.length})</option>
+                      {inView.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          Only {divisionName(entry.division_id)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {outsideView > 0 && !onlyEntry ? (
                   <p className="status-banner" data-tone="error">
                     This team is also entered in {outsideView} other division{outsideView === 1 ? "" : "s"}. Swapping a member changes the team
                     itself, so it applies there too.
@@ -385,7 +421,7 @@ export function RosterPane({ admin }: { admin: AdminData }) {
                             <button
                               className="button small"
                               disabled={savingKey === key || !chosen}
-                              onClick={() => replaceDoubles(teamId, member.player_id, chosen, key)}
+                              onClick={() => replaceDoubles(teamId, member.player_id, chosen, key, onlyEntry)}
                               type="button"
                             >
                               {savingKey === key ? "Replacing..." : "Replace"}

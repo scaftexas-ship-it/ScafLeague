@@ -582,6 +582,62 @@ export async function replaceTeamMember(
   }
 }
 
+/**
+ * Swaps one partner on a doubles entry for ONE division only. replaceTeamMember
+ * rewrites the team itself, which every division the team is entered in shares --
+ * and a knockout bracket reuses the very team that played the group stage, so
+ * changing a partner there would also rewrite the group-stage results.
+ *
+ * Instead the entry gets a copy of the team with the one player changed. The
+ * entry keeps its id, so its matches, scores and bracket slot stay exactly as
+ * they were.
+ */
+export async function replaceTeamMemberInEntry(
+  supabase: SupabaseClient,
+  entryId: string,
+  oldPlayerId: string,
+  newPlayerId: string,
+  names: { oldName: string; newName: string }
+) {
+  const entry = await supabase.from("division_entries").select("id, label, team_id").eq("id", entryId).single();
+  if (entry.error || !entry.data?.team_id) fail(entry.error, "This entry has no team to change.");
+  const teamId = entry.data.team_id as string;
+
+  const [team, members] = await Promise.all([
+    supabase.from("teams").select("club_id, name").eq("id", teamId).single(),
+    supabase.from("team_members").select("player_id").eq("team_id", teamId)
+  ]);
+  if (team.error || !team.data) fail(team.error, "Could not load the team.");
+  if (members.error) fail(members.error, "Could not load the team's players.");
+
+  // Case-insensitive, as in replaceTeamMember: names are typed by hand as often as generated.
+  const pattern = new RegExp(names.oldName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  const teamName = team.data.name.replace(pattern, names.newName);
+  // A hand-named team ("The Rockets") has no player name to swap; keep the two
+  // teams distinguishable rather than creating a second one with the same name.
+  const nextTeamName = names.oldName.trim() && teamName !== team.data.name ? teamName : `${team.data.name} (with ${names.newName})`;
+  const nextLabel = entry.data.label.replace(pattern, names.newName);
+
+  const created = await supabase.from("teams").insert({ club_id: team.data.club_id, name: nextTeamName }).select("id").single();
+  if (created.error || !created.data) fail(created.error, "Could not create the replacement team.");
+  const newTeamId = created.data.id as string;
+
+  const keep = (members.data || []).map((member) => member.player_id as string).filter((playerId) => playerId !== oldPlayerId);
+  try {
+    const added = await supabase.from("team_members").insert([...keep, newPlayerId].map((playerId) => ({ team_id: newTeamId, player_id: playerId })));
+    if (added.error) fail(added.error, "Could not add the players to the replacement team.");
+    const moved = await supabase
+      .from("division_entries")
+      .update({ team_id: newTeamId, label: nextLabel === entry.data.label ? nextTeamName : nextLabel })
+      .eq("id", entryId);
+    if (moved.error) fail(moved.error, "Could not move this entry to the replacement team.");
+  } catch (error) {
+    // Nothing points at the new team yet, so removing it leaves things as they were.
+    await supabase.from("teams").delete().eq("id", newTeamId);
+    throw error;
+  }
+}
+
 export async function listDivisionEntries(supabase: SupabaseClient, divisionIds: string[]) {
   if (divisionIds.length === 0) return [] as DivisionEntryRow[];
   const { data, error } = await supabase
